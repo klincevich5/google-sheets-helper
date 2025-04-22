@@ -25,6 +25,42 @@ def get_doc_id_map():
             result[row["table_type"]] = row["spreadsheet_id"]
     return result
 
+def get_pending_scans(table_name: str):
+    now = datetime.now(WARSAW_TZ)  # текущее локальное время
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    rows = cursor.execute(f"SELECT * FROM {table_name}").fetchall()
+    pending = []
+
+    for row in rows:
+        interval_raw = row["scan_interval"]
+        if interval_raw is None or str(interval_raw).strip() == "":
+            continue
+
+        try:
+            interval = int(interval_raw)
+        except Exception:
+            continue
+
+        raw_last = row["last_scan"]
+        if not raw_last:  # если даты нет — нужно отсканировать
+            pending.append(dict(row))
+            continue
+
+        try:
+            last = datetime.fromisoformat(raw_last).astimezone(WARSAW_TZ)
+        except Exception:
+            last = datetime.min.replace(tzinfo=WARSAW_TZ)
+
+        if now - last >= timedelta(seconds=interval):
+            pending.append(dict(row))
+
+    conn.close()
+    return pending
+
 def parse_ddmmyyyy(date_str):
     try:
         return datetime.strptime(date_str, "%d.%m.%Y").date()
@@ -137,42 +173,6 @@ def list_tracked_documents():
             docs.append((table_type, label, spreadsheet_id))
 
     return docs
-
-def get_pending_scans(table_name: str):
-    now = datetime.now(WARSAW_TZ)  # текущее локальное время
-
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-
-    rows = cursor.execute(f"SELECT * FROM {table_name}").fetchall()
-    pending = []
-
-    for row in rows:
-        interval_raw = row["scan_interval"]
-        if interval_raw is None or str(interval_raw).strip() == "":
-            continue
-
-        try:
-            interval = int(interval_raw)
-        except Exception:
-            continue
-
-        raw_last = row["last_scan"]
-        if not raw_last:  # если даты нет — нужно отсканировать
-            pending.append(dict(row))
-            continue
-
-        try:
-            last = datetime.fromisoformat(raw_last).astimezone(WARSAW_TZ)
-        except Exception:
-            last = datetime.min.replace(tzinfo=WARSAW_TZ)
-
-        if now - last >= timedelta(seconds=interval):
-            pending.append(dict(row))
-
-    conn.close()
-    return pending
 
 def update_last_scan(table_name: str, process_id: int):
     now_local = datetime.now(WARSAW_TZ).isoformat()
