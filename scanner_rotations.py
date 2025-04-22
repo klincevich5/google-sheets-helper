@@ -1,8 +1,8 @@
 import time
 from database import get_pending_scans, update_last_scan, log_scan_groups, get_doc_id_map
 from logger import log_to_file
-from batch_tools import build_batchget_ranges, fetch_batch_values
-from data_methods import get_range_by_method
+from utils import build_batchget_ranges, fetch_batch_values
+from methods import get_range_by_method
 from config import ROTATIONS_LOG_FILE, SCAN_INTERVAL_SECONDS, WARSAW_TZ
 from datetime import datetime
 

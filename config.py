@@ -2,6 +2,8 @@ import os
 from zoneinfo import ZoneInfo
 WARSAW_TZ = ZoneInfo("Europe/Warsaw")
 
+TOKEN_PATH = "token.json"
+
 DB_PATH = "scheduler.db"
 LOG_DIR = "logs"
 SCAN_INTERVAL_SECONDS = 10
