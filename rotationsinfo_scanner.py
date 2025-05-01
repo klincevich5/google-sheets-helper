@@ -1,4 +1,5 @@
 # rotationsinfo_scanner.py
+
 import os
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -7,8 +8,6 @@ from collections import defaultdict
 from googleapiclient.errors import HttpError
 from data import load_rotationsinfo_tasks
 from logger import log_to_file, log_separator, log_section
-
-from get import clean
 
 from config import ROTATIONSINFO_LOG
 
@@ -34,7 +33,6 @@ class RotationsInfoScanner:
 
         while True:
             try:
-                clean()
                 log_section("🔄 db очищена ", self.log_file)
                 self.check_and_refresh_token()
                 log_section("🔄 Новый цикл сканирования RotationsInfo", self.log_file)
@@ -64,6 +62,9 @@ class RotationsInfoScanner:
             task.scan_failures,
             task.id
         ))
+
+        log_to_file(self.log_file, f"💾 Сохраняю в БД [Task {task.name_of_process}] → need_update={task.need_update}, hash={task.hash}")
+
         self.conn.commit()
 
     def load_tasks(self):
@@ -134,6 +135,8 @@ class RotationsInfoScanner:
             task.need_update,
             task.id
         ))
+
+        log_to_file(self.log_file, f"💾 Сохраняю в БД [Task {task.name_of_process}] → need_update={task.need_update}, hash={task.hash}")
 
         self.conn.commit()
 
@@ -350,6 +353,8 @@ class RotationsInfoScanner:
             task.need_update,
             task.id
         ))
+        
+        log_to_file(self.log_file, f"💾 Сохраняю в БД [Task {task.name_of_process}] → need_update={task.need_update}, hash={task.hash}")
 
         self.conn.commit()
 
@@ -379,6 +384,24 @@ class RotationsInfoScanner:
                     log_to_file(self.log_file, f"      [{i+1}] {row}")
                 if len(task.raw_values_json) > 5:
                     log_to_file(self.log_file, f"      ...ещё {len(task.raw_values_json) - 5} строк скрыто")
+
+                try:
+                    task.process_raw_value()
+                    log_to_file(self.log_file, f"📦 [Task {task.name_of_process}] После обработки: {len(task.values_json)} строк.")
+                except Exception as e:
+                    log_to_file(self.log_file, f"❌ [Task {task.name_of_process}] Ошибка в process_raw_value: {e}")
+                    failed += 1
+                    continue  # пропускаем update
+
+                try:
+                    task.check_for_update()
+                    log_to_file(self.log_file, f"🔍 [Task {task.name_of_process}] Хеш: {task.hash}, need_update: {task.need_update}")
+                except Exception as e:
+                    log_to_file(self.log_file, f"❌ [Task {task.name_of_process}] Ошибка в check_for_update: {e}")
+                    failed += 1
+                    continue
+
+                self.update_task_process_fields(task)
 
                 # Обработка
                 task.process_raw_value()

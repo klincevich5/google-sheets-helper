@@ -79,6 +79,16 @@ class Task:
         processed_values = process_func(self.raw_values_json)
         self.values_json = processed_values
 
+        try:
+            processed_values = process_func(self.raw_values_json)
+            if not isinstance(processed_values, list) or not all(isinstance(row, list) for row in processed_values):
+                raise ValueError("❌ Обработанные данные не являются списком списков")
+            self.values_json = processed_values
+        except Exception as e:
+            raise ValueError(f"❌ Ошибка при вызове {method_name}: {e}")
+
+
+
     def check_for_update(self):
         if not self.values_json:
             self.need_update = 0

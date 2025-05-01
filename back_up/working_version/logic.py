@@ -7,6 +7,7 @@ from data import return_raw_tasks, return_tracked_tables
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from methods import PROCESSORS
+from datetime import date
 
 def log_to_file(path, text):
     with open(path, "a", encoding="utf-8") as f:
@@ -207,7 +208,10 @@ class TaskManager:
         return [Task(data) for data in raw_tasks]
 
     def get_current_month_id(self):
-        today = datetime.now().date()
+        # today = datetime.now().date()
+
+        today = date(2025, 4, 5)
+
         tracked_tables = return_tracked_tables()
         result = {}
         for table in tracked_tables:
