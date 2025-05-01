@@ -76,6 +76,7 @@ def load_rotationsinfo_tasks(conn):
         if now >= last_scan_dt + timedelta(seconds=scan_interval):
             task = Task(dict(row))
             task.source_table = "RotationsInfo"
+            task.actual_tab = task.source_page_name
             tasks.append(task)
 
     return tasks

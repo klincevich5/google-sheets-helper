@@ -35,6 +35,9 @@ class Task:
         self.target_doc_id = None
         self.raw_values_json = None  # Данные из сканирования
 
+        # Только для RotationsInfo — фиксируем актуальную вкладку
+        self.actual_tab = None
+
     def _parse_datetime(self, value):
         if not value:
             return None
@@ -86,8 +89,6 @@ class Task:
             self.values_json = processed_values
         except Exception as e:
             raise ValueError(f"❌ Ошибка при вызове {method_name}: {e}")
-
-
 
     def check_for_update(self):
         if not self.values_json:

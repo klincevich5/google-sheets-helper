@@ -3,8 +3,6 @@
 import os
 import threading
 import time
-import json
-import hashlib
 from collections import defaultdict
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -24,14 +22,14 @@ class SheetsInfoScanner:
         self.keep_running = True
 
     def run(self):
-        def heartbeat():
-            while self.keep_running:
-                log_to_file(self.log_file, "⏳ Ожидание следующего цикла сканирования...")
-                log_to_file(self.log_file, "=" * 100)
-                time.sleep(10)
+        # def heartbeat():
+        #     while self.keep_running:
+        #         log_to_file(self.log_file, "⏳ Ожидание следующего цикла сканирования...")
+        #         log_to_file(self.log_file, "=" * 100)
+        #         time.sleep(10)
 
-        heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
-        heartbeat_thread.start()
+        # heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
+        # heartbeat_thread.start()
 
         while True:
             try:
@@ -357,11 +355,11 @@ class SheetsInfoScanner:
                     log_to_file(self.log_file, "")
 
                     if task.need_update:
-                        log_to_file(self.log_file, f"🔁 Изменения обнаружены — задача будет обновлена.")
+                        log_to_file(self.log_file, "🔁 Изменения обнаружены — задача будет обновлена.")
                         self.update_task_process_fields(task)
                         log_to_file(self.log_file, f"✅ [Task {task.name_of_process}] Успешно обработана и записана в БД.")
                     else:
-                        log_to_file(self.log_file, f"⚪ Изменений нет — обновление не требуется.")
+                        log_to_file(self.log_file, "⚪ Изменений нет — обновление не требуется.")
                 except Exception as e:
                     log_to_file(self.log_file, f"❌ [Task {task.name_of_process}] Ошибка в check_for_update: {e}")
                     failed += 1
@@ -412,8 +410,7 @@ class SheetsInfoScanner:
             tasks_by_update_group[task.update_group].append(task)
 
         for update_group, group_tasks in tasks_by_update_group.items():
-            log_to_file(self.log_file, f"🔄 Обработка группы обновления: {update_group} ({len(group_tasks)} задач).")
-            log_separator(self.log_file)
+            log_section(f"🔄 Обработка группы обновления: {update_group} ({len(group_tasks)} задач).", self.log_file)
 
             tasks_by_doc = defaultdict(list)
             for task in group_tasks:

@@ -4,8 +4,8 @@ from config import DB_PATH
 def clear_db(table_name):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute(f"UPDATE {table_name} SET last_scan = ?, last_update = ?", ("NULL", "NULL",))
-    # cursor.execute(f"UPDATE {table_name} SET last_scan = ?, hash = ?, values_json = ?, last_update = ?", ("NULL", "NULL", "NULL", "NULL",))
+    # cursor.execute(f"UPDATE {table_name} SET last_scan = ?, last_update = ?", ("NULL", "NULL",))
+    cursor.execute(f"UPDATE {table_name} SET last_scan = ?, hash = ?, values_json = ?, last_update = ?", ("NULL", "NULL", "NULL", "NULL",))
     conn.commit()
     conn.close()
 
@@ -33,7 +33,7 @@ def set():
 
     # Обновляем source_page_area для всех записей с source_table_type = 'qa_list'
     cursor.execute("""
-    UPDATE SheetsInfo
+    UPDATE RotationsInfo
     SET source_page_area = 'G1:Y300'
     WHERE source_table_type = 'qa_list';
     """)
@@ -48,5 +48,6 @@ def set():
 if __name__ == "__main__":
     # Пример использования функции
     clear_db("SheetsInfo")
+    clear_db("RotationsInfo")
     print("Last scan updated successfully.")
     set()

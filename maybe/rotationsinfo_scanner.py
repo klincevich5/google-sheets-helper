@@ -3,6 +3,7 @@
 import os
 import threading
 import time
+import json
 from collections import defaultdict
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -11,6 +12,7 @@ from googleapiclient.errors import HttpError
 from config import ROTATIONSINFO_LOG
 from data import load_rotationsinfo_tasks
 from logger import log_to_file, log_separator, log_section
+
 
 class RotationsInfoScanner:
     def __init__(self, conn, service, doc_id_map):
@@ -28,23 +30,17 @@ class RotationsInfoScanner:
                 log_to_file(self.log_file, "=" * 100)
                 time.sleep(10)
 
-        heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
-        heartbeat_thread.start()
+        threading.Thread(target=heartbeat, daemon=True).start()
 
         while True:
             try:
                 log_section("🔄 Новый цикл сканирования RotationsInfo", self.log_file)
 
                 self.check_and_refresh_token()
-
                 self.load_tasks()
-
                 self.scan_phase()
-
                 self.process_phase()
-
                 self.update_phase()
-                
                 self.summary_report()
 
                 time.sleep(60)
@@ -54,10 +50,46 @@ class RotationsInfoScanner:
                 log_to_file(self.log_file, f"❌ Критическая ошибка в основном цикле: {e}")
                 time.sleep(10)
 
+    def load_tasks(self):
+        log_section("🧩 📥 Загрузка задач из RotationsInfo", self.log_file)
+        self.tasks = load_rotationsinfo_tasks(self.conn)
+
+        if not self.tasks:
+            log_section(self.log_file, "⚪ Нет задач для загрузки из RotationsInfo.")
+            return
+
+        log_section(self.log_file, f"🔄 Загружено {len(self.tasks)} задач.")
+        for task in self.tasks:
+            log_to_file(self.log_file, f"   • [Task] {task.source_table_type} | Страница: {task.source_page_name} | Диапазон: {task.source_page_area}")
+            task.assign_doc_ids(self.doc_id_map)
+
+    # def check_and_refresh_token(self):
+    #     log_section("🔐 Проверка работоспособности Google API токена", self.log_file)
+
+    #     token_path = "token.json"
+    #     if not os.path.exists(token_path):
+    #         log_to_file(self.log_file, f"❌ Файл {token_path} не найден. Авторизация невозможна.")
+    #         raise FileNotFoundError("token.json не найден")
+
+    #     creds = Credentials.from_authorized_user_file(token_path)
+    #     if creds.expired and creds.refresh_token:
+    #         try:
+    #             creds.refresh(Request())
+    #             with open(token_path, 'w') as token_file:
+    #                 token_file.write(creds.to_json())
+    #             log_to_file(self.log_file, "🔄 Токен успешно обновлён и сохранён в token.json.")
+    #         except Exception as e:
+    #             log_to_file(self.log_file, f"❌ Ошибка обновления токена: {e}")
+    #             raise
+    #     else:
+    #         log_to_file(self.log_file, "✅ Токен действителен.")
+
     def check_and_refresh_token(self):
         log_section("🔐 Проверка работоспособности Google API токена", self.log_file)
 
         token_path = "token.json"
+        creds = None
+
         if not os.path.exists(token_path):
             log_to_file(self.log_file, f"❌ Файл {token_path} не найден. Авторизация невозможна.")
             raise FileNotFoundError("token.json не найден")
@@ -73,40 +105,34 @@ class RotationsInfoScanner:
                 log_to_file(self.log_file, f"❌ Ошибка обновления токена: {e}")
                 raise
         else:
-            log_to_file(self.log_file, "✅ Токен действителен.")
+            log_to_file(self.log_file, "✅ Токен действителен и не требует обновления.")
 
-    def load_tasks(self):
-        log_section("🧩 📥 Загрузка задач из RotationsInfo", self.log_file)
-        self.tasks = load_rotationsinfo_tasks(self.conn)
+#==================================================================================================
+#  Фаза сканирования
+#==================================================================================================
 
-        if not self.tasks:
-            log_section(self.log_file, "⚪ Нет задач для загрузки из RotationsInfo.")
-            return
-
-        log_section(self.log_file, f"🔄 Загружено {len(self.tasks)} задач.")
-        for task in self.tasks:
-            log_to_file(self.log_file, f"   • [Task] {task.source_table_type} | Страница: {task.source_page_name} | Диапазон: {task.source_page_area}")
-            task.assign_doc_ids(self.doc_id_map)
-
-    def update_task_scan_fields(self, task):
+    def update_task_update_fields(self, task):
+        """Обновить last_update, update_quantity, update_failures после выгрузки задачи."""
         cursor = self.conn.cursor()
-        table_name = "RotationsInfo"
 
         cursor.execute(f"""
-            UPDATE {table_name}
+            UPDATE {task.source_table}
             SET
-                last_scan = ?,
-                scan_quantity = ?,
-                scan_failures = ?
+                last_update = ?,
+                update_quantity = ?,
+                update_failures = ?,
+                need_update = ?
             WHERE id = ?
         """, (
-            task.last_scan.isoformat() if task.last_scan else None,
-            task.scan_quantity,
-            task.scan_failures,
+            task.last_update.isoformat() if task.last_update else None,
+            task.update_quantity,
+            task.update_failures,
+            task.need_update,
             task.id
         ))
 
         log_to_file(self.log_file, f"💾 Сохраняю в БД [Task {task.name_of_process}] → need_update={task.need_update}, hash={task.hash}")
+
         self.conn.commit()
 
     def check_sheet_exists(self, spreadsheet_id, sheet_name):
@@ -119,14 +145,14 @@ class RotationsInfoScanner:
                     return True
             return False
         except Exception as e:
-            log_to_file(self.log_file, f"❌ Ошибка при проверке листа в {spreadsheet_id}: {e}")
+            log_to_file(self.log_file, f"❌ Ошибка при проверке листа '{sheet_name}' в документе {spreadsheet_id}: {e}")
             return False
 
     def batch_get(self, service, spreadsheet_id, ranges, log_file, retries=5, delay_seconds=5):
         attempt = 0
         while attempt < retries:
             try:
-                log_to_file(log_file, f"📡 Пытаюсь выполнить batchGet (попытка {attempt+1}/{retries}) для документа {spreadsheet_id}")
+                log_to_file(log_file, f"📡 batchGet (попытка {attempt+1}/{retries}) для {spreadsheet_id}")
                 result = service.spreadsheets().values().batchGet(
                     spreadsheetId=spreadsheet_id,
                     ranges=ranges,
@@ -134,31 +160,31 @@ class RotationsInfoScanner:
                 ).execute()
                 value_ranges = result.get("valueRanges", [])
                 data = {vr.get("range", ""): vr.get("values", []) for vr in value_ranges}
-                log_to_file(log_file, f"✅ Успешный batchGet. Получено {len(data)} диапазонов.")
+                log_to_file(log_file, f"✅ batchGet успешен. Получено диапазонов: {len(data)}")
                 return data
             except HttpError as e:
-                status_code = e.resp.status
-                log_to_file(log_file, f"❌ HttpError {status_code} при batchGet: {e}")
-                if status_code in (429, 500, 503):
+                status = e.resp.status
+                log_to_file(log_file, f"❌ HttpError {status}: {e}")
+                if status in (429, 500, 503):
                     attempt += 1
                     log_to_file(log_file, f"⏳ Повтор через {delay_seconds} секунд...")
                     time.sleep(delay_seconds)
-                elif status_code == 401:
-                    log_to_file(log_file, "🔒 Ошибка авторизации (401). Прерываю batchGet.")
+                elif status == 401:
+                    log_to_file(log_file, "🔒 Ошибка авторизации (401). Завершение.")
                     return {}
                 else:
                     return {}
             except Exception as e:
-                if any(x in str(e) for x in ["SSL", "handshake", "decryption", "timed out"]):
+                if any(x in str(e) for x in ["SSL", "handshake", "timed out"]):
                     attempt += 1
-                    log_to_file(log_file, f"⏳ Сетевая ошибка '{e}', повтор через {delay_seconds} секунд...")
+                    log_to_file(log_file, f"⏳ Сетевая ошибка '{e}'. Повтор через {delay_seconds} секунд...")
                     time.sleep(delay_seconds)
                 else:
-                    log_to_file(log_file, f"❌ Непредвиденная ошибка batchGet: {e}")
+                    log_to_file(log_file, f"❌ Непредвиденная ошибка: {e}")
                     return {}
         log_to_file(log_file, "❌ Превышено количество попыток batchGet.")
         return {}
-        
+    
     def summary_report(self):
         log_section("📈 Итоги текущего цикла сканирования", self.log_file)
 
@@ -180,6 +206,7 @@ class RotationsInfoScanner:
         log_to_file(self.log_file, f"   • Успешно обновлено: {update['updated']}")
         log_to_file(self.log_file, f"   • Пропущено: {update['skipped']}")
         log_to_file(self.log_file, f"   • Ошибок обновления: {update['failed']}")
+
         log_to_file(self.log_file, "=" * 100)
 
     def scan_phase(self):
@@ -198,8 +225,9 @@ class RotationsInfoScanner:
 
         log_to_file(self.log_file, f"🔎 Найдено {len(ready_tasks)} задач, готовых к сканированию:")
         for task in ready_tasks:
-            log_to_file(self.log_file, f"   • [Task] {task.name_of_process} | Страница: {task.source_page_name} | Диапазон: {task.source_page_area}")
+            log_to_file(self.log_file, f"   • [Task] {task.name_of_process} | source_page_name: {task.source_page_name} | Диапазон: {task.source_page_area}")
 
+        # === Группировка по scan_group ===
         scan_groups = defaultdict(list)
         for task in ready_tasks:
             if not task.assign_doc_ids(self.doc_id_map):
@@ -220,18 +248,22 @@ class RotationsInfoScanner:
 
             doc_id = group_tasks[0].source_doc_id
             unique_sheet_names = set(task.source_page_name for task in group_tasks)
-            log_to_file(self.log_file, f"Уникальные названия листов: {unique_sheet_names}")
+            log_to_file(self.log_file, f"Уникальные листы (source_page_name): {unique_sheet_names}")
 
+            # === Проверка наличия листов ===
             exists_map = {}
             for sheet_name in unique_sheet_names:
                 exists_map[sheet_name] = self.check_sheet_exists(doc_id, sheet_name)
-                log_to_file(self.log_file, f"{'✅' if exists_map[sheet_name] else '⚠️'} Лист '{sheet_name}' {'существует' if exists_map[sheet_name] else 'не найден'}.")
+                log_to_file(
+                    self.log_file,
+                    f"{'✅' if exists_map[sheet_name] else '⚠️'} Лист '{sheet_name}' {'найден' if exists_map[sheet_name] else 'не найден'}"
+                )
 
             valid_tasks = []
             for task in group_tasks:
-                sheet_name = task.source_page_name
+                sheet_name = task.actual_tab
                 if exists_map.get(sheet_name):
-                    log_to_file(self.log_file, f"➡️ Используем '{sheet_name}' для задачи {task.name_of_process}.")
+                    log_to_file(self.log_file, f"➡️ Лист '{sheet_name}' будет использоваться для задачи {task.name_of_process}.")
                     valid_tasks.append(task)
                 else:
                     log_to_file(self.log_file, f"⛔ Пропуск задачи {task.name_of_process}: лист '{sheet_name}' не найден.")
@@ -243,6 +275,7 @@ class RotationsInfoScanner:
                 log_to_file(self.log_file, f"⚪ Все задачи группы {scan_group} отфильтрованы. Пропуск batchGet.")
                 continue
 
+            # === Группировка по диапазонам ===
             range_to_tasks = defaultdict(list)
             for task in valid_tasks:
                 range_str = f"{task.source_page_name}!{task.source_page_area}"
@@ -250,22 +283,22 @@ class RotationsInfoScanner:
 
             ranges = list(range_to_tasks.keys())
 
-            log_to_file(self.log_file, "")
-
-            log_to_file(self.log_file, f"📤 Отправка batchGet на документ {task.source_table_type} с {len(ranges)} уникальными диапазонами:")
+            log_to_file(self.log_file, f"📤 Отправка batchGet для документа {task.source_table_type}:")
             for r in ranges:
                 log_to_file(self.log_file, f"   • {r}")
 
+            # === Запрос данных ===
             response_data = self.batch_get(self.service, doc_id, ranges, self.log_file)
 
             if not response_data:
-                log_to_file(self.log_file, "❌ Пустой ответ от batchGet. Все задачи будут отмечены как неудачные.")
+                log_to_file(self.log_file, "❌ Пустой ответ от batchGet. Отмечаем задачи как неудачные.")
                 for task in valid_tasks:
                     task.update_after_scan(success=False)
                     self.update_task_scan_fields(task)
                     total_failed += 1
                 continue
 
+            # === Обработка ответа ===
             normalized_response = {}
             for k, v in response_data.items():
                 clean_key = k.replace("'", "")
@@ -273,7 +306,6 @@ class RotationsInfoScanner:
                     sheet_name, cells_range = clean_key.split("!", 1)
                     normalized_response[(sheet_name.strip(), cells_range.strip())] = v
 
-            log_to_file(self.log_file, "")
             log_to_file(self.log_file, f"📥 Получены диапазоны: {list(normalized_response.keys())}")
 
             for task in valid_tasks:
@@ -291,6 +323,10 @@ class RotationsInfoScanner:
                     task.update_after_scan(success=True)
                     self.update_task_scan_fields(task)
                     log_to_file(self.log_file, f"✅ [Task {task.name_of_process}] Найден диапазон {sheet_name}!{cells_range}, строк: {len(matched_values)}")
+                    for i, row in enumerate(matched_values[:5]):
+                        log_to_file(self.log_file, f"      [{i+1}] {row}")
+                    if len(matched_values) > 5:
+                        log_to_file(self.log_file, f"      ...ещё {len(matched_values) - 5} строк скрыто")
                     total_success += 1
                 else:
                     task.update_after_scan(success=False)
@@ -309,6 +345,34 @@ class RotationsInfoScanner:
             "success": total_success,
             "failed": total_failed
         }
+
+    #==================================================================================================
+    #  Фаза обработки
+    #==================================================================================================
+
+    def update_task_process_fields(self, task):
+        """Обновить values_json, hash и need_update после обработки задачи."""
+        cursor = self.conn.cursor()
+
+        table_name = "SheetsInfo" if task.source_table_type == "SheetsInfo" else "RotationsInfo"
+
+        cursor.execute(f"""
+            UPDATE {table_name}
+            SET
+                hash = ?,
+                values_json = ?,
+                need_update = ?
+            WHERE id = ?
+        """, (
+            task.hash,
+            str(task.values_json) if task.values_json else None,
+            task.need_update,
+            task.id
+        ))
+        
+        log_to_file(self.log_file, f"💾 Сохраняю в БД [Task {task.name_of_process}] → need_update={task.need_update}, hash={task.hash}")
+
+        self.conn.commit()
 
     def process_phase(self):
         log_section("🛠️ Фаза обработки", self.log_file)
@@ -355,16 +419,16 @@ class RotationsInfoScanner:
                     log_to_file(self.log_file, "")
 
                     if task.need_update:
-                        log_to_file(self.log_file, "🔁 Изменения обнаружены — задача будет обновлена.")
-                        self.update_task_process_fields(task)
-                        log_to_file(self.log_file, f"✅ [Task {task.name_of_process}] Успешно обработана и записана в БД.")
+                        log_to_file(self.log_file, f"🔁 Изменения обнаружены — задача будет обновлена.")
                     else:
-                        log_to_file(self.log_file, "⚪ Изменений нет — обновление не требуется.")
+                        log_to_file(self.log_file, f"⚪ Изменений нет — обновление не требуется.")
                 except Exception as e:
                     log_to_file(self.log_file, f"❌ [Task {task.name_of_process}] Ошибка в check_for_update: {e}")
                     failed += 1
                     continue
 
+                self.update_task_process_fields(task)
+                log_to_file(self.log_file, f"✅ [Task {task.name_of_process}] Успешно обработана и записана в БД.")
                 log_separator(self.log_file)
                 processed += 1
 
@@ -382,6 +446,11 @@ class RotationsInfoScanner:
             "skipped": skipped,
             "failed": failed
         }
+
+
+    #==================================================================================================
+    #  Фаза обновления
+    #==================================================================================================
 
     def update_phase(self):
         log_section("🔼 Фаза обновления", self.log_file)
@@ -410,7 +479,8 @@ class RotationsInfoScanner:
             tasks_by_update_group[task.update_group].append(task)
 
         for update_group, group_tasks in tasks_by_update_group.items():
-            log_section(f"🔄 Обработка группы обновления: {update_group} ({len(group_tasks)} задач).", self.log_file)
+            log_to_file(self.log_file, f"🔄 Обработка группы обновления: {update_group} ({len(group_tasks)} задач).")
+            log_separator(self.log_file)
 
             tasks_by_doc = defaultdict(list)
             for task in group_tasks:
@@ -425,6 +495,7 @@ class RotationsInfoScanner:
                         log_to_file(self.log_file, f"⚪ [Task {task.name_of_process}] Нет данных для отправки, пропуск.")
                         total_skipped += 1
                         continue
+
                     batch_data.append({
                         "range": f"{task.target_page_name}!{task.target_page_area}",
                         "values": task.values_json
@@ -454,6 +525,7 @@ class RotationsInfoScanner:
                             "range": f"{task.target_page_name}!{task.target_page_area}",
                             "values": task.values_json
                         }]
+
                         single_success, single_error = self.batch_update(self.service, doc_id, single_data, self.log_file)
 
                         if single_success:
@@ -467,7 +539,7 @@ class RotationsInfoScanner:
 
                         self.update_task_update_fields(task)
 
-                time.sleep(2)  # Пауза между группами
+                time.sleep(2)
 
         log_to_file(self.log_file, "📊 Результаты фазы обновления:")
         log_to_file(self.log_file, f"   • ✅ Успешно обновлено: {total_updated}")
@@ -480,12 +552,14 @@ class RotationsInfoScanner:
             "failed": total_failed,
             "skipped": total_skipped
         }
-        
+
+
     def update_tasks_batch(self, spreadsheet_id, tasks):
+        """Пытается обновить задачи одним batchUpdate, а при ошибке — поштучно."""
         batch_data = []
         for task in tasks:
             if not task.values_json:
-                log_to_file(self.log_file, f"⚪ [Task {task.name_of_process}] Нет данных, пропуск.")
+                log_to_file(self.log_file, f"⚪ [Task {task.name_of_process}] Нет данных для отправки, пропуск.")
                 continue
 
             batch_data.append({
@@ -501,91 +575,67 @@ class RotationsInfoScanner:
 
         if success:
             for task in tasks:
-                task.update_after_upload(True)
+                task.update_after_upload(success=True)
                 self.update_task_update_fields(task)
-            log_to_file(self.log_file, f"✅ Обновлено пакетно: {len(tasks)} задач.")
+            log_to_file(self.log_file, f"✅ Успешное обновление группы ({len(tasks)} задач) одним запросом.")
         else:
-            log_to_file(self.log_file, f"❌ Ошибка batchUpdate: {error}. Попробуем по одной.")
+            log_to_file(self.log_file, f"❌ Ошибка batchUpdate для группы: {error}")
+            log_to_file(self.log_file, "🔄 Переходим на поштучную отправку задач.")
 
+            # Переходим к одиночной отправке
             for task in tasks:
                 if not task.values_json:
                     continue
 
-                data = [{
+                single_data = [{
                     "range": f"{task.target_page_name}!{task.target_page_area}",
                     "values": task.values_json
                 }]
-                ok, err = self.batch_update(self.service, spreadsheet_id, data, self.log_file)
 
-                if ok:
-                    task.update_after_upload(True)
-                    log_to_file(self.log_file, f"✅ Обновлена [Task {task.name_of_process}] отдельно.")
+                single_success, single_error = self.batch_update(self.service, spreadsheet_id, single_data, self.log_file)
+
+                if single_success:
+                    task.update_after_upload(success=True)
+                    log_to_file(self.log_file, f"✅ Успешно обновлена задача [Task {task.name_of_process}] отдельно.")
                 else:
-                    task.update_after_upload(False)
-                    log_to_file(self.log_file, f"❌ Ошибка при обновлении [Task {task.name_of_process}]: {err}")
+                    task.update_after_upload(success=False)
+                    log_to_file(self.log_file, f"❌ Ошибка обновления [Task {task.name_of_process}] отдельно: {single_error}")
 
                 self.update_task_update_fields(task)
 
     def batch_update(self, service, spreadsheet_id, batch_data, log_file, retries=3, delay_seconds=10):
-        for attempt in range(retries):
+        """ Отправка batchUpdate запроса с повторными попытками при ошибках """
+        attempt = 0
+
+        while attempt < retries:
             try:
+                body = {
+                    "valueInputOption": "USER_ENTERED",
+                    "data": batch_data
+                }
                 service.spreadsheets().values().batchUpdate(
                     spreadsheetId=spreadsheet_id,
-                    body={
-                        "valueInputOption": "USER_ENTERED",
-                        "data": batch_data
-                    }
+                    body=body
                 ).execute()
-                return True, None
+
+                return True, None  # Успех
+
             except HttpError as e:
-                status = e.resp.status
-                log_to_file(log_file, f"❌ HTTP {status}: {e}")
-                if status in [429, 500, 503]:
-                    log_to_file(log_file, f"⏳ Повтор через {delay_seconds} сек...")
+                status_code = e.resp.status
+                log_to_file(log_file, f"❌ Ошибка HTTP {status_code} при batchUpdate: {e}")
+
+                if status_code in (429, 500, 503):  # Перегрузка сервера или лимит
+                    attempt += 1
+                    log_to_file(log_file, f"⏳ Повторная попытка {attempt}/{retries} через {delay_seconds} секунд...")
                     time.sleep(delay_seconds)
+                elif status_code == 401:  # Проблемы с авторизацией
+                    log_to_file(log_file, "🔒 Ошибка авторизации (401). Требуется обновить токен.")
+                    return False, f"Ошибка авторизации: {e}"
                 else:
                     return False, str(e)
+
             except Exception as e:
-                log_to_file(log_file, f"❌ Ошибка: {e}")
+                log_to_file(log_file, f"❌ Непредвиденная ошибка при batchUpdate: {e}")
                 return False, str(e)
-        return False, "Превышено число попыток"
 
-    def update_task_process_fields(self, task):
-        cursor = self.conn.cursor()
-        table = "RotationsInfo"
-        cursor.execute(f"""
-            UPDATE {table}
-            SET
-                hash = ?,
-                values_json = ?,
-                need_update = ?
-            WHERE id = ?
-        """, (
-            task.hash,
-            str(task.values_json) if task.values_json else None,
-            task.need_update,
-            task.id
-        ))
-        log_to_file(self.log_file, f"💾 Обновлён values_json и hash для задачи {task.name_of_process}")
-        self.conn.commit()
-
-    def update_task_update_fields(self, task):
-        cursor = self.conn.cursor()
-        table = "RotationsInfo"
-        cursor.execute(f"""
-            UPDATE {table}
-            SET
-                last_update = ?,
-                update_quantity = ?,
-                update_failures = ?,
-                need_update = ?
-            WHERE id = ?
-        """, (
-            task.last_update.isoformat() if task.last_update else None,
-            task.update_quantity,
-            task.update_failures,
-            task.need_update,
-            task.id
-        ))
-        log_to_file(self.log_file, f"💾 Обновлён статус обновления для задачи {task.name_of_process}")
-        self.conn.commit()
+        return False, "Превышено количество попыток отправки batchUpdate."
