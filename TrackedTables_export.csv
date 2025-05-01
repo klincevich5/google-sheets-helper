@@ -1,0 +1,26 @@
+﻿id,table_type,label,spreadsheet_id,valid_from,valid_to
+1,qa_list,QA List,10n0pf5qP26ALbpe0-vVlaILzmdUF8d529yN6Mt8hS9c,01.01.2024,31.12.2026
+2,feedbacks,Feedbacks April 2025,1DrXJDAFdEm86MmKOPbiJjac6IvYmmUfjK_CFJwLr9ZM,01.04.2025,30.04.2025
+3,bonus,Bonus April 2025,14q-CItoITjj2L-VdyTkhPy2umyPz9oeUzNJzHyMJLho,01.04.2025,30.04.2025
+4,live88_bs_game,live88 BS Game April 2025,16VGJ-rBYJtpli72fvJFYd0KLngaVs-0iA8KzTXWl0Vs,01.04.2025,30.04.2025
+5,legendz_bs_game,Legendz BS Game April 2025,13UohkGTvMEbAUQaF5OypryuDfDKIXBZjBFohrpoHcI0,01.04.2025,30.04.2025
+6,shuffle_rotation,SHUFFLE Rotation April 2025,1GpEDNX2zpJRHjwF96Dv49H38aieEhiDS-qwSp6i-dds,01.04.2025,30.04.2025
+7,vip_rotation,VIP Rotation April 2025,1vBxIFHLkcuQ_T1LyRQx1F2UthYlk5QBJvvfqZCCCtL8,01.04.2025,30.04.2025
+8,generic_rotation,GENERIC Rotation April 2025,1nLTpz3Eyj86mZQYr3y3WqtAkBJ-W3mbzAOhYLuL6OLE,01.04.2025,30.04.2025
+9,gsbj_rotation,GSBJ Rotation April 2025,1lQ_Na96wsxPKH-lrxgC-D6BAD3z9qB8xcmL79uCxKlk,01.04.2025,30.04.2025
+10,legendz_rotation,LEGENDZ Rotation April 2025,1jsPORmAJhaLHzpJVY2W9pYqZHSHmCw84OZoY6WHlQi8,01.04.2025,30.04.2025
+11,tristar_rotation,TRI-STAR Rotation April 2025,1F2YagosDAMwlloZIe1lNwBvl1udM5YaeGtcWwpuEk94,01.04.2025,30.04.2025
+12,tritonrl_rotation,AquaRL Rotation April 2025,13sn64-v1sL5eU8oVqOGEBu9dIkWjf32i3O9z23y5m9c,01.04.2025,30.04.2025
+13,main_screen_rotation,Main Screen Rotation April 2025,1mNjJR9qGyF__7JjcVIL5BuC3_-HGH4KQkTLtXtVjbh4,01.04.2025,30.04.2025
+14,feedbacks,Feedbacks May 2025,feedbacks_id,01.05.2025,31.05.2025
+15,bonus,Bonus May 2025,bonus_id,01.05.2025,31.05.2025
+16,live88_bs_game,live88 BS Game May 2025,live88_bs_game_id,01.05.2025,31.05.2025
+17,legendz_bs_game,Legendz BS Game May 2025,legendz_bs_game_id,01.05.2025,31.05.2025
+18,shuffle_rotation,SHUFFLE Rotation May 2025,shuffle_rotation_id,01.05.2025,31.05.2025
+19,vip_rotation,VIP Rotation May 2025,vip_rotation_id,01.05.2025,31.05.2025
+20,generic_rotation,GENERIC Rotation May 2025,generic_rotation_id,01.05.2025,31.05.2025
+21,gsbj_rotation,GSBJ Rotation May 2025,gsbj_rotation_id,01.05.2025,31.05.2025
+22,legendz_rotation,LEGENDZ Rotation May 2025,legendz_rotation_id,01.05.2025,31.05.2025
+23,tristar_rotation,TRI-STAR Rotation May 2025,tristar_rotation_id,01.05.2025,31.05.2025
+24,tritonrl_rotation,AquaRL Rotation May 2025,tritonrl_rotation_id,01.05.2025,31.05.2025
+25,main_screen_rotation,Main Screen Rotation May 2025,main_screen_rotation_id,01.05.2025,31.05.2025

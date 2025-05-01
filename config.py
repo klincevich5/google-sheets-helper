@@ -1,13 +1,24 @@
+# config.py
+
 import os
-from zoneinfo import ZoneInfo
-WARSAW_TZ = ZoneInfo("Europe/Warsaw")
+from dotenv import load_dotenv
 
-TOKEN_PATH = "token.json"
+# Загрузка переменных из .env файла
+load_dotenv()
 
-DB_PATH = "scheduler.db"
-LOG_DIR = "logs"
-SCAN_INTERVAL_SECONDS = 10
+# Настройки базы данных и логов
+DB_PATH = os.getenv("DB_PATH", "scheduler.db")
 
-SHEETS_LOG_FILE = os.path.join(LOG_DIR, "SheetsInfo_scanner_logs.txt")
-ROTATIONS_LOG_FILE = os.path.join(LOG_DIR, "RotationInfo_scanner_logs.txt")
+# Настройки логов
+MAIN_LOG = os.getenv("MAIN_LOG", "scanner.log")
+ROTATIONSINFO_LOG = os.getenv("ROTATIONSINFO_LOG", "scanner_rotationsinfo.log")
+SHEETSINFO_LOG = os.getenv("SHEETSINFO_LOG", "scanner_sheetsinfo.log")
 
+# Настройки Google API
+TOKEN_PATH = os.getenv("TOKEN_PATH", "token.json")
+
+# Настройки времени
+TIMEZONE = os.getenv("TIMEZONE", "Europe/Warsaw")
+
+# Время рефреша токена
+REFRESH_TOKEN_TIME = os.getenv("REFRESH_TOKEN_TIME", 3600)  # 1 час по умолчанию

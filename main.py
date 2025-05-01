@@ -1,43 +1,70 @@
+# main.py
+
 import threading
-from config import SHEETS_LOG_FILE, ROTATIONS_LOG_FILE
-from logger import log_to_file
-from database import check_db_integrity, list_tracked_documents
-from scanner_sheets import SheetsInfo_scanner
-from scanner_rotations import RotationsInfo_scanner
 import time
+import signal
+import sys
+from rotationsinfo_scanner import RotationsInfoScanner
+from sheetsinfo_scanner import SheetsInfoScanner
+from database import connect_to_db
+from data import return_tracked_tables
+from utils import load_credentials, build_doc_id_map
+from logger import log_to_file  # если логирование нужно
+from config import DB_PATH, MAIN_LOG
+
+stop_event = threading.Event()  # Событие для корректной остановки всех потоков
+
+def start_rotations_scanner(conn, service, doc_id_map):
+    while not stop_event.is_set():
+        try:
+            scanner = RotationsInfoScanner(conn, service, doc_id_map)
+            scanner.run()
+        except Exception as e:
+            log_to_file(MAIN_LOG, f"❌ Ошибка в потоке RotationsInfoScanner: {e}")
+            time.sleep(5)  # Пауза перед перезапуском
+
+def start_sheets_scanner(conn, service, doc_id_map):
+    while not stop_event.is_set():
+        try:
+            scanner = SheetsInfoScanner(conn, service, doc_id_map)
+            scanner.run()
+        except Exception as e:
+            log_to_file(MAIN_LOG, f"❌ Ошибка в потоке SheetsInfoScanner: {e}")
+            time.sleep(5)  # Пауза перед перезапуском
+
+def signal_handler(sig, frame):
+    print("\n🛑 Получен сигнал остановки. Завершение работы...")
+    log_to_file(MAIN_LOG, "🛑 Скрипт остановлен пользователем.")
+    stop_event.set()
+    sys.exit(0)
 
 def main():
-    log_to_file(SHEETS_LOG_FILE, "🚀 Запуск системы сканирования...")
-    log_to_file(ROTATIONS_LOG_FILE, "🚀 Запуск системы сканирования...")
+    print("🚀 Инициализация скрипта...")
 
-    try:
-        check_db_integrity()
-        log_to_file(SHEETS_LOG_FILE, "📦 База данных найдена.")
-        log_to_file(ROTATIONS_LOG_FILE, "📦 База данных найдена.")
-    except Exception as e:
-        log_to_file(SHEETS_LOG_FILE, f"❌ Ошибка: {e}")
-        log_to_file(ROTATIONS_LOG_FILE, f"❌ Ошибка: {e}")
-        return
+    # Подключение к базе данных и Google Sheets
+    conn = connect_to_db(DB_PATH)
+    service = load_credentials()
 
-    docs = list_tracked_documents()
-    log_to_file(SHEETS_LOG_FILE, f"✅ Найдено {len(docs)} актуальных документов:")
-    log_to_file(ROTATIONS_LOG_FILE, f"✅ Найдено {len(docs)} актуальных документов:")
-    for doc in docs:
-        line = f"├─ {doc[0]} | {doc[1]} | ID: {doc[2]}"
-        log_to_file(SHEETS_LOG_FILE, line)
-        log_to_file(ROTATIONS_LOG_FILE, line)
+    # Построение карты документов для текущего месяца
+    doc_id_map = build_doc_id_map(return_tracked_tables(conn))
 
-    thread1 = threading.Thread(target=SheetsInfo_scanner, daemon=True)
-    thread2 = threading.Thread(target=RotationsInfo_scanner, daemon=True)
-    thread1.start()
-    thread2.start()
+    # Обработка Ctrl+C
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
 
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        log_to_file(SHEETS_LOG_FILE, "🛑 Остановка по Ctrl+C")
-        log_to_file(ROTATIONS_LOG_FILE, "🛑 Остановка по Ctrl+C")
+    # Запуск сканеров в отдельных потоках
+    print("🔄 Запуск потоков сканирования...")
+
+    thread_rotations = threading.Thread(target=start_rotations_scanner, args=(conn, service, doc_id_map), daemon=True)
+    # thread_sheets = threading.Thread(target=start_sheets_scanner, args=(conn, service, doc_id_map), daemon=True)
+
+    thread_rotations.start()
+    # thread_sheets.start()
+
+    while not stop_event.is_set():
+        time.sleep(1)  # Просто держим основной поток живым
+
+    print("✅ Все потоки завершены.")
 
 if __name__ == "__main__":
     main()

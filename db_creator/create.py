@@ -1,6 +1,5 @@
 import sqlite3
 
-# Путь к файлу базы данных
 db_path = "scheduler.db"
 conn = sqlite3.connect(db_path)
 cursor = conn.cursor()
@@ -25,7 +24,6 @@ CREATE TABLE IF NOT EXISTS SheetsInfo (
     source_table_type TEXT NOT NULL,
     source_page_name TEXT NOT NULL,
     source_page_area TEXT NOT NULL,
-    get_data_method TEXT DEFAULT 'get_default',
     scan_group TEXT,
     last_scan TEXT,
     scan_interval INTEGER DEFAULT 1800,
@@ -37,11 +35,11 @@ CREATE TABLE IF NOT EXISTS SheetsInfo (
     target_table_type TEXT NOT NULL,
     target_page_name TEXT NOT NULL,
     target_page_area TEXT NOT NULL,
-    import_data_method TEXT DEFAULT 'import_default',
     update_group TEXT,
     last_update TEXT,
     update_quantity INTEGER DEFAULT 0,
-    update_failures INTEGER DEFAULT 0
+    update_failures INTEGER DEFAULT 0,
+    need_update BOOLEAN DEFAULT 0
 );
 """)
 
@@ -53,7 +51,6 @@ CREATE TABLE IF NOT EXISTS RotationsInfo (
     source_table_type TEXT NOT NULL,
     source_page_name TEXT NOT NULL,
     source_page_area TEXT NOT NULL,
-    get_data_method TEXT DEFAULT 'get_rotation',
     scan_group TEXT,
     last_scan TEXT,
     scan_interval INTEGER DEFAULT 60,
@@ -65,13 +62,10 @@ CREATE TABLE IF NOT EXISTS RotationsInfo (
     target_table_type TEXT NOT NULL,
     target_page_name TEXT NOT NULL,
     target_page_area TEXT NOT NULL,
-    import_data_method TEXT DEFAULT 'import_rotation',
     update_group TEXT,
     last_update TEXT,
     update_quantity INTEGER DEFAULT 0,
     update_failures INTEGER DEFAULT 0,
-    start_row INTEGER DEFAULT NULL,
-    end_row INTEGER DEFAULT NULL,
     need_update BOOLEAN DEFAULT 0
 );
 """)

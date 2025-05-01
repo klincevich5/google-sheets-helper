@@ -1,41 +1,73 @@
-import json
-import hashlib
-from collections import defaultdict
-from googleapiclient.errors import HttpError
-from logger import log_to_file
-from config import SHEETS_LOG_FILE
-from methods import proc_func
+# utils.py
+from datetime import datetime, timedelta
+import os
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
+from zoneinfo import ZoneInfo
 
-def process_data_by_method(method, values):
-    processed = proc_func(method, values)
-    values_json = json.dumps(processed, ensure_ascii=False)
-    new_hash = hashlib.md5(values_json.encode()).hexdigest()
-    return values_json, new_hash
+from config import TOKEN_PATH, TIMEZONE
 
-def filter_valid_tasks(tasks, doc_id_map):
-    valid = []
-    for t in tasks:
-        source_id = doc_id_map.get(t.get("source_table_type"))
-        target_id = doc_id_map.get(t.get("target_table_type"))
-        if source_id and target_id:
-            t["source_doc_id"] = source_id
-            t["target_doc_id"] = target_id
-            valid.append(t)
-        else:
-            log_to_file(SHEETS_LOG_FILE, f"⚠️ Пропуск задачи {t.get('id')} без doc_id")
-    return valid
+def load_credentials():
+    """Загрузка токена, авто-обновление и возврат готового service."""
+    creds = None
 
-def get_group_ranges(group_tasks):
-    mapping = defaultdict(list)
-    for task in group_tasks:
-        key = f"'{task['source_page_name']}'!{task['source_page_area']}"
-        mapping[key].append(task)
-    return mapping
+    if os.path.exists(TOKEN_PATH):
+        creds = Credentials.from_authorized_user_file(TOKEN_PATH)
 
-def fetch_data_from_sheet(sheet, doc_id, ranges):
-    try:
-        result = sheet.values().batchGet(spreadsheetId=doc_id, ranges=ranges).execute()
-        return result.get("valueRanges", [])
-    except HttpError as e:
-        log_to_file(SHEETS_LOG_FILE, f"❌ Ошибка получения данных из {doc_id}: {str(e)}")
-        return None
+    if creds and creds.expired and creds.refresh_token:
+        try:
+            creds.refresh(Request())
+            print("🔄 Токен был обновлен автоматически.")
+            with open(TOKEN_PATH, "w", encoding="utf-8") as token_file:
+                token_file.write(creds.to_json())
+        except Exception as e:
+            print(f"❌ Ошибка обновления токена: {e}")
+
+    if not creds:
+        raise RuntimeError("❌ Токен не найден или некорректен. Требуется авторизация.")
+
+    # ⚡ Самое главное: создаем сервис после загрузки токена
+    service = build("sheets", "v4", credentials=creds)
+    return service
+
+def build_doc_id_map(tracked_tables):
+    """Построение карты соответствия table_type -> spreadsheet_id."""
+    from datetime import datetime
+
+    today = datetime.now().date()
+    today = datetime(2025, 4, 5).date()
+
+    doc_id_map = {}
+
+    for table in tracked_tables:
+        valid_from = datetime.strptime(table["valid_from"], "%d.%m.%Y").date()
+        valid_to = datetime.strptime(table["valid_to"], "%d.%m.%Y").date()
+        if valid_from <= today <= valid_to:
+            doc_id_map[table["table_type"]] = table["spreadsheet_id"]
+    return doc_id_map
+
+def get_active_tabs(now=None):
+    if not now:
+        now = datetime.now(ZoneInfo(TIMEZONE))
+    hour = now.hour
+    tab_list = []
+
+    if 9 <= hour < 19:
+        tab_list.append(f"DAY {now.day}")
+    elif 19 <= hour < 21:
+        tab_list.append(f"DAY {now.day}")
+        tab_list.append(f"NIGHT {now.day}")
+    elif 21 <= hour <= 23:
+        tab_list.append(f"NIGHT {now.day}")
+    elif 0 <= hour < 7:
+        yesterday = now - timedelta(days=1)
+        tab_list.append(f"NIGHT {yesterday.day}")
+    elif 7 <= hour < 9:
+        yesterday = now - timedelta(days=1)
+        tab_list.append(f"DAY {now.day}")
+        tab_list.append(f"NIGHT {yesterday.day}")
+    
+    tab_list = ["DAY 1"]
+
+    return tab_list
