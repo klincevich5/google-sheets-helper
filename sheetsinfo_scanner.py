@@ -1,6 +1,7 @@
 # sheetsinfo_scanner.py
 
 import os
+import threading
 import time
 from collections import defaultdict
 from google.auth.transport.requests import Request

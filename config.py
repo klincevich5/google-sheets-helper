@@ -1,24 +1,23 @@
-# config.py
-
 import os
 from dotenv import load_dotenv
 
-# Загрузка переменных из .env файла
 load_dotenv()
 
-# Настройки базы данных и логов
+# --- Telegram ---
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+AUTHORIZED_USERS = [
+    int(uid.strip()) for uid in os.getenv("AUTHORIZED_USERS", "").split(",") if uid.strip().isdigit()
+]
+
+# --- Пути к логам ---
+MAIN_LOG = os.getenv("MAIN_LOG", "logs/scanner.log")
+ROTATIONSINFO_LOG = os.getenv("ROTATIONSINFO_LOG", "logs/scanner_rotationsinfo.log")
+SHEETSINFO_LOG = os.getenv("SHEETSINFO_LOG", "logs/scanner_sheetsinfo.log")
+
+# --- БД и Google API ---
 DB_PATH = os.getenv("DB_PATH", "scheduler.db")
-
-# Настройки логов
-MAIN_LOG = os.getenv("MAIN_LOG", "scanner.log")
-ROTATIONSINFO_LOG = os.getenv("ROTATIONSINFO_LOG", "scanner_rotationsinfo.log")
-SHEETSINFO_LOG = os.getenv("SHEETSINFO_LOG", "scanner_sheetsinfo.log")
-
-# Настройки Google API
 TOKEN_PATH = os.getenv("TOKEN_PATH", "token.json")
+REFRESH_TOKEN_TIME = int(os.getenv("REFRESH_TOKEN_TIME", 3600))
 
-# Настройки времени
+# --- Время ---
 TIMEZONE = os.getenv("TIMEZONE", "Europe/Warsaw")
-
-# Время рефреша токена
-REFRESH_TOKEN_TIME = os.getenv("REFRESH_TOKEN_TIME", 3600)  # 1 час по умолчанию

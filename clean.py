@@ -5,7 +5,7 @@ def clear_db(table_name):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     # cursor.execute(f"UPDATE {table_name} SET last_scan = ?, last_update = ?", ("NULL", "NULL",))
-    cursor.execute(f"UPDATE {table_name} SET last_scan = ?, hash = ?, values_json = ?, last_update = ?", ("NULL", "NULL", "NULL", "NULL",))
+    cursor.execute(f"UPDATE {table_name} SET last_scan = ?, hash = ?, values_json = ?, last_update = ?, update_failures = ?, update_quantity =?", ("NULL", "NULL", "NULL", "NULL", 0, 0,))
     conn.commit()
     conn.close()
 

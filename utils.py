@@ -36,19 +36,16 @@ def build_doc_id_map(tracked_tables):
     from datetime import datetime
 
     today = datetime.now().date()
-    today = datetime(2025, 5, 5).date()
+    today = datetime(2025, 4, 5).date()
     print(f"📅 Сегодня: {today}")
 
     doc_id_map = {}
 
     for table in tracked_tables:
         valid_from = datetime.strptime(table["valid_from"], "%d.%m.%Y").date()
-        print(f"📅 {table['table_type']} - {valid_from}")
         valid_to = datetime.strptime(table["valid_to"], "%d.%m.%Y").date()
-        print(f"📅 {table['table_type']} - {valid_to}")
         if valid_from <= today <= valid_to:
             doc_id_map[table["table_type"]] = table["spreadsheet_id"]
-            print(f"📅 {table['table_type']} - {doc_id_map[table['table_type']]}")
     return doc_id_map
 
 def get_active_tabs(now=None):

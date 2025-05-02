@@ -39,10 +39,12 @@ class Task:
         if not value:
             return None
         try:
-            return datetime.fromisoformat(value)
+            dt = datetime.fromisoformat(value)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=ZoneInfo(TIMEZONE))
+            return dt
         except Exception:
             return None
-
     def is_ready_to_scan(self):
         if not self.last_scan:
             return True

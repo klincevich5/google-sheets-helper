@@ -28,7 +28,8 @@ def return_tracked_tables(conn):
 def load_sheetsinfo_tasks(conn):
     """Загрузка актуальных задач из SheetsInfo."""
     cursor = conn.cursor()
-    now = datetime.now(ZoneInfo(TIMEZONE))
+    tz = ZoneInfo(TIMEZONE)
+    now = datetime.now(tz)
 
     cursor.execute("SELECT * FROM SheetsInfo")
     rows = cursor.fetchall()
@@ -38,11 +39,12 @@ def load_sheetsinfo_tasks(conn):
         last_scan = row["last_scan"]
         scan_interval = row["scan_interval"]
 
-        # === Безопасная обработка last_scan ===
         if not last_scan or last_scan == "NULL":
-            last_scan_dt = datetime.min.replace(tzinfo=ZoneInfo(TIMEZONE))
+            last_scan_dt = datetime.min.replace(tzinfo=tz)
         else:
             last_scan_dt = datetime.fromisoformat(last_scan)
+            if last_scan_dt.tzinfo is None:
+                last_scan_dt = last_scan_dt.replace(tzinfo=tz)
 
         if now >= last_scan_dt + timedelta(seconds=scan_interval):
             task = Task(dict(row))
