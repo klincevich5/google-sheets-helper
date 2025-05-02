@@ -8,7 +8,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.errors import HttpError
 
-from config import ROTATIONSINFO_LOG
+from config import ROTATIONSINFO_LOG, TOKEN_PATH
 from data import load_rotationsinfo_tasks
 from logger import log_to_file, log_separator, log_section
 
@@ -22,14 +22,6 @@ class RotationsInfoScanner:
         self.keep_running = True
 
     def run(self):
-        def heartbeat():
-            while self.keep_running:
-                log_to_file(self.log_file, "⏳ Ожидание следующего цикла сканирования...")
-                log_to_file(self.log_file, "=" * 100)
-                time.sleep(10)
-
-        heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
-        heartbeat_thread.start()
 
         while True:
             try:
@@ -57,18 +49,17 @@ class RotationsInfoScanner:
     def check_and_refresh_token(self):
         log_section("🔐 Проверка работоспособности Google API токена", self.log_file)
 
-        token_path = "token.json"
-        if not os.path.exists(token_path):
-            log_to_file(self.log_file, f"❌ Файл {token_path} не найден. Авторизация невозможна.")
-            raise FileNotFoundError("token.json не найден")
+        if not os.path.exists(TOKEN_PATH):
+            log_to_file(self.log_file, f"❌ Файл {TOKEN_PATH} не найден. Авторизация невозможна.")
+            raise FileNotFoundError(f"{TOKEN_PATH} не найден")
 
-        creds = Credentials.from_authorized_user_file(token_path)
+        creds = Credentials.from_authorized_user_file(TOKEN_PATH)
         if creds.expired and creds.refresh_token:
             try:
                 creds.refresh(Request())
-                with open(token_path, 'w') as token_file:
+                with open(TOKEN_PATH, 'w') as token_file:
                     token_file.write(creds.to_json())
-                log_to_file(self.log_file, "🔄 Токен успешно обновлён и сохранён в token.json.")
+                log_to_file(self.log_file, f"🔄 Токен успешно обновлён и сохранён в {TOKEN_PATH}")
             except Exception as e:
                 log_to_file(self.log_file, f"❌ Ошибка обновления токена: {e}")
                 raise
@@ -257,7 +248,6 @@ class RotationsInfoScanner:
                 log_to_file(self.log_file, f"   • {r}")
 
             response_data = self.batch_get(self.service, doc_id, ranges, self.log_file)
-
             if not response_data:
                 log_to_file(self.log_file, "❌ Пустой ответ от batchGet. Все задачи будут отмечены как неудачные.")
                 for task in valid_tasks:
@@ -279,7 +269,6 @@ class RotationsInfoScanner:
             for task in valid_tasks:
                 expected_sheet = task.source_page_name.strip()
                 expected_area_start = task.source_page_area.split(":")[0].strip()
-
                 matched_values = None
                 for (sheet_name, cells_range), values in normalized_response.items():
                     if sheet_name == expected_sheet and cells_range.startswith(expected_area_start):
@@ -287,6 +276,7 @@ class RotationsInfoScanner:
                         break
 
                 if matched_values:
+
                     task.raw_values_json = matched_values
                     task.update_after_scan(success=True)
                     self.update_task_scan_fields(task)
@@ -384,6 +374,14 @@ class RotationsInfoScanner:
         }
 
     def update_phase(self):
+        """
+        🔼 ФАЗА ОБНОВЛЕНИЯ
+
+        Обрабатываются только две группы задач:
+        • update_main — вставка на главный экран (строго по ROTATION_ORDER) по каждой смене (DAY 1, NIGHT 1 и т.д.)
+        • update_shuffle — вставка в динамический диапазон (поиск строки 'shift:')
+        """
+
         log_section("🔼 Фаза обновления", self.log_file)
 
         if not self.tasks:
@@ -391,96 +389,261 @@ class RotationsInfoScanner:
             self.metrics_update = {"updated": 0, "skipped": 0, "failed": 0}
             return
 
-        tasks_to_update = [task for task in self.tasks if task.need_update == 1]
+        updated_count = 0
+        failed_count = 0
+        skipped_count = 0
 
-        if not tasks_to_update:
-            log_to_file(self.log_file, "⚪ Нет задач, требующих обновления в Google Sheets.")
-            self.metrics_update = {"updated": 0, "skipped": 0, "failed": 0}
-            return
+        main_tasks = [task for task in self.tasks if task.update_group == "update_main"]
+        shuffle_tasks = [task for task in self.tasks if "shuffle" in task.update_group]
 
-        log_to_file(self.log_file, f"🔄 Начало фазы обновления. Задач для выгрузки: {len(tasks_to_update)}.")
-        log_to_file(self.log_file, "=" * 100)
+        if main_tasks:
+            grouped_by_tab = defaultdict(list)
+            for task in main_tasks:
+                grouped_by_tab[task.target_page_name].append(task)
 
-        total_updated = 0
-        total_failed = 0
-        total_skipped = 0
-
-        tasks_by_update_group = defaultdict(list)
-        for task in tasks_to_update:
-            tasks_by_update_group[task.update_group].append(task)
-
-        for update_group, group_tasks in tasks_by_update_group.items():
-            log_section(f"🔄 Обработка группы обновления: {update_group} ({len(group_tasks)} задач).", self.log_file)
-
-            tasks_by_doc = defaultdict(list)
-            for task in group_tasks:
-                tasks_by_doc[task.target_doc_id].append(task)
-
-            for doc_id, tasks in tasks_by_doc.items():
-                log_to_file(self.log_file, f"📄 Работаем с документом {task.source_table_type} ({len(tasks)} задач).")
-
-                batch_data = []
-                for task in tasks:
-                    if not task.values_json:
-                        log_to_file(self.log_file, f"⚪ [Task {task.name_of_process}] Нет данных для отправки, пропуск.")
-                        total_skipped += 1
-                        continue
-                    batch_data.append({
-                        "range": f"{task.target_page_name}!{task.target_page_area}",
-                        "values": task.values_json
-                    })
-
-                if not batch_data:
-                    log_to_file(self.log_file, "⚪ Нет данных для batchUpdate.")
-                    continue
-
-                success, error = self.batch_update(self.service, doc_id, batch_data, self.log_file)
-
-                if success:
-                    for task in tasks:
-                        task.update_after_upload(success=True)
-                        self.update_task_update_fields(task)
-                    log_to_file(self.log_file, f"✅ Успешное обновление группы ({len(tasks)} задач) одним запросом.")
-                    total_updated += len(tasks)
-                else:
-                    log_to_file(self.log_file, f"❌ Ошибка batchUpdate: {error}")
-                    log_to_file(self.log_file, "🔄 Переходим на поштучную отправку задач.")
-
-                    for task in tasks:
-                        if not task.values_json:
-                            continue
-
-                        single_data = [{
-                            "range": f"{task.target_page_name}!{task.target_page_area}",
-                            "values": task.values_json
-                        }]
-                        single_success, single_error = self.batch_update(self.service, doc_id, single_data, self.log_file)
-
-                        if single_success:
-                            task.update_after_upload(success=True)
-                            log_to_file(self.log_file, f"✅ Успешно обновлена задача [Task {task.name_of_process}] отдельно.")
-                            total_updated += 1
-                        else:
+            for tab, group in grouped_by_tab.items():
+                if any(t.need_update == 1 for t in group):
+                    log_section(f"🔄 Обработка группы обновления: update_main / {tab} ({len(group)} задач)", self.log_file)
+                    try:
+                        u, f, s = self.import_main_data(group)
+                        updated_count += u
+                        failed_count += f
+                        skipped_count += s
+                    except Exception as e:
+                        log_to_file(self.log_file, f"❌ Ошибка import_main_data: {e}")
+                        for task in group:
                             task.update_after_upload(success=False)
-                            log_to_file(self.log_file, f"❌ Ошибка обновления [Task {task.name_of_process}] отдельно: {single_error}")
-                            total_failed += 1
+                            self.update_task_update_fields(task)
+                            failed_count += 1
 
-                        self.update_task_update_fields(task)
+        shuffle_groups = defaultdict(list)
+        for task in shuffle_tasks:
+            shuffle_groups[task.update_group].append(task)
 
-                time.sleep(2)  # Пауза между группами
+        for update_group, group in shuffle_groups.items():
+            log_section(f"🔄 Обработка группы обновления: {update_group} ({len(group)} задач)", self.log_file)
+            try:
+                u, f, s = self.import_shuffle_data(group)
+                updated_count += u
+                failed_count += f
+                skipped_count += s
+            except Exception as e:
+                log_to_file(self.log_file, f"❌ Ошибка import_shuffle_data: {e}")
+                for task in group:
+                    task.update_after_upload(success=False)
+                    self.update_task_update_fields(task)
+                    failed_count += 1
 
         log_to_file(self.log_file, "📊 Результаты фазы обновления:")
-        log_to_file(self.log_file, f"   • ✅ Успешно обновлено: {total_updated}")
-        log_to_file(self.log_file, f"   • ❌ Неудачных обновлений: {total_failed}")
-        log_to_file(self.log_file, f"   • ⚪ Пропущено (нет данных): {total_skipped}")
-        log_to_file(self.log_file, f"   • 🔁 Всего задач в очереди обновления: {len(tasks_to_update)}")
+        log_to_file(self.log_file, f"   • ✅ Успешно обновлено: {updated_count}")
+        log_to_file(self.log_file, f"   • ❌ Неудачных обновлений: {failed_count}")
+        log_to_file(self.log_file, f"   • ⚪ Пропущено (нет данных или неизвестная группа): {skipped_count}")
+        log_to_file(self.log_file, f"   • 🔁 Всего задач в очереди обновления: {len(self.tasks)}")
 
         self.metrics_update = {
-            "updated": total_updated,
-            "failed": total_failed,
-            "skipped": total_skipped
+            "updated": updated_count,
+            "failed": failed_count,
+            "skipped": skipped_count
         }
-        
+
+    def import_main_data(self, all_main_tasks):
+        log_section("📥 Импорт данных для update_main", self.log_file)
+        grouped_by_page = defaultdict(list)
+        for task in all_main_tasks:
+            grouped_by_page[task.target_page_name].append(task)
+
+        updated = 0
+        failed = 0
+        skipped = 0
+
+        for page_name, tasks in grouped_by_page.items():
+            log_to_file(self.log_file, f"📄 Обработка смены: {page_name} ({len(tasks)} задач)")
+
+            ROTATION_ORDER = [
+                "SHUFFLE Main", "VIP Main", "TURKISH Main", "GENERIC Main",
+                "GSBJ Main", "LEGENDZ Main", "TRI-STAR Main", "TritonRL Main"
+            ]
+
+            task_map = {task.name_of_process: task for task in tasks}
+            sorted_tasks = []
+            all_values = []
+
+            for name in ROTATION_ORDER:
+                task = task_map.get(name)
+                if not task:
+                    log_to_file(self.log_file, f"⚠️ Задача '{name}' не найдена.")
+                    continue
+
+                values = task.values_json
+                if not values or not isinstance(values, list):
+                    log_to_file(self.log_file, f"⚪ [Task {name}] нет корректных данных. Пропуск.")
+                    task.update_after_upload(False)
+                    self.update_task_update_fields(task)
+                    skipped += 1
+                    continue
+
+                flat = [str(cell).strip().upper() for row in values for cell in row if cell is not None]
+                if flat == ["NULL"]:
+                    log_to_file(self.log_file, f"⚪ [Task {name}] содержит 'NULL'. Пропуск.")
+                    task.update_after_upload(False)
+                    self.update_task_update_fields(task)
+                    skipped += 1
+                    continue
+
+                log_to_file(self.log_file, f"📦 [Task {name}] — {len(values)} строк (🔄 новые данные)")
+                sorted_tasks.append(task)
+                all_values.extend(values)
+                all_values.append([""] * 26)
+
+            if not sorted_tasks:
+                log_to_file(self.log_file, f"⚪ Нет задач с данными для вставки. Пропуск смены {page_name}.")
+                continue
+
+            if all_values[-1] == [""] * 26:
+                all_values.pop()
+
+            if len(all_values) < 100:
+                padding = 100 - len(all_values)
+                all_values.extend([[""] * 26 for _ in range(padding)])
+                log_to_file(self.log_file, f"➕ Добавлены {padding} пустых строк до 100.")
+            elif len(all_values) > 100:
+                all_values = all_values[:100]
+                log_to_file(self.log_file, f"⚠️ Обрезано до 100 строк.")
+
+            reference_task = sorted_tasks[0]
+            spreadsheet_id = reference_task.target_doc_id
+            target_page_area = reference_task.target_page_area
+            insert_range = f"{page_name}!{target_page_area}"
+
+            log_to_file(self.log_file, f"📤 Вставка итогового блока из {len(all_values)} строк в диапазон {insert_range}.")
+            batch_data = [{
+                "range": insert_range,
+                "values": all_values
+            }]
+
+            success, error = self.batch_update(self.service, spreadsheet_id, batch_data, self.log_file)
+
+            for task in sorted_tasks:
+                task.update_after_upload(success)
+                self.update_task_update_fields(task)
+                if success:
+                    updated += 1
+                else:
+                    failed += 1
+
+            if success:
+                log_to_file(self.log_file, f"✅ Вставка смены {page_name} завершена успешно ({len(sorted_tasks)} задач).")
+            else:
+                log_to_file(self.log_file, f"❌ Ошибка при вставке смены {page_name}: {error}")
+
+        return updated, failed, skipped
+    
+    def import_shuffle_data(self, tasks):
+        updated = 0
+        failed = 0
+        skipped = 0
+
+        shuffle_groups = defaultdict(list)
+        for task in tasks:
+            shuffle_groups[task.update_group].append(task)
+
+        for update_group, group_tasks in shuffle_groups.items():
+            spreadsheet_id = group_tasks[0].target_doc_id
+            target_page_name = group_tasks[0].target_page_name
+
+            log_to_file(self.log_file, f"📄 Документ: {spreadsheet_id}, Лист: {target_page_name}")
+
+            try:
+                raw = self.batch_get(
+                    self.service,
+                    spreadsheet_id,
+                    [f"{target_page_name}!D1:AC200"],
+                    self.log_file
+                )
+                sheet_values = list(raw.values())[0] if raw else []
+
+                shift_row_index = None
+                for idx, row in enumerate(sheet_values):
+                    if row and isinstance(row[0], str) and "shift:" in row[0].lower():
+                        shift_row_index = idx + 1
+                        break
+
+                if shift_row_index is None:
+                    log_to_file(self.log_file, f"❌ Строка с 'shift:' не найдена на листе {target_page_name}. Пропуск всей группы.")
+                    for task in group_tasks:
+                        task.update_after_upload(False)
+                        self.update_task_update_fields(task)
+                        failed += 1
+                    continue
+
+                start_row = shift_row_index + 1
+                end_row = start_row + 5
+                insert_range = f"{target_page_name}!D{start_row}:AC{end_row}"
+
+                log_to_file(self.log_file, f"📍 Найдена строка 'shift:' на строке {shift_row_index + 1}, вставка в диапазон {insert_range}")
+
+                all_values = []
+                tasks_with_data = []
+
+                for task in group_tasks:
+                    if not task.values_json or not isinstance(task.values_json, list):
+                        log_to_file(self.log_file, f"⚪ [Task {task.name_of_process}] Нет корректных данных для вставки. Пропуск.")
+                        task.update_after_upload(False)
+                        self.update_task_update_fields(task)
+                        skipped += 1
+                        continue
+
+                    flat = [str(cell).strip().upper() for row in task.values_json for cell in row]
+                    if flat == ["NULL"]:
+                        log_to_file(self.log_file, f"⚪ [Task {task.name_of_process}] Данные содержат 'NULL'. Пропуск.")
+                        task.update_after_upload(False)
+                        self.update_task_update_fields(task)
+                        skipped += 1
+                        continue
+
+                    all_values.extend(task.values_json)
+                    tasks_with_data.append(task)
+
+                if not tasks_with_data:
+                    log_to_file(self.log_file, f"⚪ Нет допустимых данных для вставки в группе {update_group}. Пропуск.")
+                    continue
+
+                batch_data = [{
+                    "range": insert_range,
+                    "values": all_values
+                }]
+
+                success, error = self.batch_update(self.service, spreadsheet_id, batch_data, self.log_file)
+
+                for task in group_tasks:
+                    if task in tasks_with_data:
+                        task.update_after_upload(success)
+                        if success:
+                            updated += 1
+                        else:
+                            failed += 1
+                    else:
+                        # уже учтены как skipped выше
+                        continue
+                    self.update_task_update_fields(task)
+
+                if success:
+                    log_to_file(self.log_file, f"✅ Успешная вставка данных группы {update_group}.")
+                else:
+                    log_to_file(self.log_file, f"❌ Ошибка вставки группы {update_group}: {error}")
+
+            except Exception as e:
+                log_to_file(self.log_file, f"❌ Критическая ошибка обработки группы {update_group}: {e}")
+                for task in group_tasks:
+                    task.update_after_upload(False)
+                    self.update_task_update_fields(task)
+                    failed += 1
+
+            time.sleep(2)
+
+        return updated, failed, skipped
+
+
     def update_tasks_batch(self, spreadsheet_id, tasks):
         batch_data = []
         for task in tasks:

@@ -55,11 +55,11 @@ def main():
     # Запуск сканеров в отдельных потоках
     print("🔄 Запуск потоков сканирования...")
 
-    thread_rotations = threading.Thread(target=start_rotations_scanner, args=(conn, service, doc_id_map), daemon=True)
-    # thread_sheets = threading.Thread(target=start_sheets_scanner, args=(conn, service, doc_id_map), daemon=True)
+    # thread_rotations = threading.Thread(target=start_rotations_scanner, args=(conn, service, doc_id_map), daemon=True)
+    thread_sheets = threading.Thread(target=start_sheets_scanner, args=(conn, service, doc_id_map), daemon=True)
 
-    thread_rotations.start()
-    # thread_sheets.start()
+    # thread_rotations.start()
+    thread_sheets.start()
 
     while not stop_event.is_set():
         time.sleep(1)  # Просто держим основной поток живым

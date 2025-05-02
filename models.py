@@ -35,9 +35,6 @@ class Task:
         self.target_doc_id = None
         self.raw_values_json = None  # Данные из сканирования
 
-        # Только для RotationsInfo — фиксируем актуальную вкладку
-        self.actual_tab = None
-
     def _parse_datetime(self, value):
         if not value:
             return None

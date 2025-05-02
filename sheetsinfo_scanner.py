@@ -1,14 +1,13 @@
 # sheetsinfo_scanner.py
 
 import os
-import threading
 import time
 from collections import defaultdict
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.errors import HttpError
 
-from config import SHEETSINFO_LOG
+from config import SHEETSINFO_LOG, TOKEN_PATH
 from data import load_sheetsinfo_tasks
 from logger import log_to_file, log_separator, log_section
 
@@ -57,18 +56,17 @@ class SheetsInfoScanner:
     def check_and_refresh_token(self):
         log_section("🔐 Проверка работоспособности Google API токена", self.log_file)
 
-        token_path = "token.json"
-        if not os.path.exists(token_path):
-            log_to_file(self.log_file, f"❌ Файл {token_path} не найден. Авторизация невозможна.")
-            raise FileNotFoundError("token.json не найден")
+        if not os.path.exists(TOKEN_PATH):
+            log_to_file(self.log_file, f"❌ Файл {TOKEN_PATH} не найден. Авторизация невозможна.")
+            raise FileNotFoundError(f"{TOKEN_PATH} не найден")
 
-        creds = Credentials.from_authorized_user_file(token_path)
+        creds = Credentials.from_authorized_user_file(TOKEN_PATH)
         if creds.expired and creds.refresh_token:
             try:
                 creds.refresh(Request())
-                with open(token_path, 'w') as token_file:
+                with open(TOKEN_PATH, 'w') as token_file:
                     token_file.write(creds.to_json())
-                log_to_file(self.log_file, "🔄 Токен успешно обновлён и сохранён в token.json.")
+                log_to_file(self.log_file, f"🔄 Токен успешно обновлён и сохранён в {TOKEN_PATH}")
             except Exception as e:
                 log_to_file(self.log_file, f"❌ Ошибка обновления токена: {e}")
                 raise
