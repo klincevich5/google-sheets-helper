@@ -20,6 +20,7 @@ from db_access import (
 from datetime import datetime
 
 from utils_bot import format_datetime_pl
+from settings_access import is_scanner_enabled, set_scanner_enabled
 
 router = Router()
 
@@ -587,3 +588,20 @@ async def handle_prepare_templates(query: CallbackQuery, state: FSMContext):
 
     await query.answer(f"✅ Добавлены {len(to_create)} шаблонов")
     await show_tracked_tables(query, state)
+
+@router.callback_query(F.data.startswith("toggle:"))
+async def toggle_scanner(query: CallbackQuery):
+    scanner_type = query.data.split(":")[1]
+    key = f"{scanner_type}_scanner"
+
+    current_status = is_scanner_enabled(key)
+    set_scanner_enabled(key, not current_status)
+
+    await query.answer(
+        f"{'✅ Включено' if not current_status else '⛔ Выключено'}: {scanner_type.capitalize()}"
+    )
+
+    await query.message.edit_text(
+        generate_main_menu_text(),
+        reply_markup=main_menu_kb()
+    )

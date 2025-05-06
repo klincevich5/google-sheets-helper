@@ -40,12 +40,12 @@ def process_qa_gsbj_list(values: List[List]) -> List[List]:
 def process_permits(values: List[List]) -> List[List]:
     result = []
     for row in values:
-        if len(row) < 18:
-            row += [""] * (18 - len(row))
+        if len(row) < 20:
+            row += [""] * (20 - len(row))
 
         col_1 = row[0]
-        cols_10_18 = row[9:17]
-        result.append([col_1] + cols_10_18)
+        cols_10_19 = row[9:19]
+        result.append([col_1] + cols_10_19)
     return result
 
 def process_rotation(values):

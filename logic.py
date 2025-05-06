@@ -60,30 +60,30 @@ def batch_update(service, spreadsheet_id, batch_data, log_file):
         log_to_file(log_file, f"❌ Ошибка при batchUpdate: {e}")
         return False, str(e)
     
-def RotationsInfo_scanner(self):
-    log_file = "scanner_rotationsinfo.log"
+# def RotationsInfo_scanner(self):
+#     log_file = "scanner_rotationsinfo.log"
 
-    if not self.rotationsinfo_tasks:
-        log_to_file(log_file, "⚪ Нет задач для обновления RotationsInfo.")
-        return
+#     if not self.rotationsinfo_tasks:
+#         log_to_file(log_file, "⚪ Нет задач для обновления RotationsInfo.")
+#         return
 
-    update_main_tasks = [task for task in self.rotationsinfo_tasks if task.update_group == "update_main"]
-    update_shuffle_tasks = [task for task in self.rotationsinfo_tasks if task.update_group in ("update_generic_shuffle", "update_legendz_shuffle", "update_gsbj_shuffle")]
+#     update_main_tasks = [task for task in self.rotationsinfo_tasks if task.update_group == "update_main"]
+#     update_shuffle_tasks = [task for task in self.rotationsinfo_tasks if task.update_group in ("update_generic_shuffle", "update_legendz_shuffle", "update_gsbj_shuffle")]
 
-    if update_main_tasks:
-        self._handle_main_updates(update_main_tasks, log_file)
+#     if update_main_tasks:
+#         self._handle_main_updates(update_main_tasks, log_file)
 
-    if update_shuffle_tasks:
-        self._handle_shuffle_updates(update_shuffle_tasks, log_file)
+#     if update_shuffle_tasks:
+#         self._handle_shuffle_updates(update_shuffle_tasks, log_file)
 
-def SheetsInfo_scanner(self):
-    log_file = "scanner_sheetsinfo.log"
+# def SheetsInfo_scanner(self):
+#     log_file = "scanner_sheetsinfo.log"
 
-    if not self.sheetsinfo_tasks:
-        log_to_file(log_file, "⚪ Нет задач для обновления SheetsInfo.")
-        return
+#     if not self.sheetsinfo_tasks:
+#         log_to_file(log_file, "⚪ Нет задач для обновления SheetsInfo.")
+#         return
 
-    self._handle_other_updates(self.sheetsinfo_tasks, log_file)
+#     self._handle_other_updates(self.sheetsinfo_tasks, log_file)
 
 
 class Task:

@@ -17,4 +17,5 @@ def log_section(title, log_file):
 
 def log_to_file(path, text):
     with open(path, "a", encoding="utf-8") as f:
-        f.write(f"{datetime.now(ZoneInfo(TIMEZONE)).isoformat()} — {text}\n")
+        f.write(f"{text}\n")
+        # f.write(f"{datetime.now(ZoneInfo(TIMEZONE)).isoformat()} — {text}\n")

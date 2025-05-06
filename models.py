@@ -1,3 +1,5 @@
+import json
+import hashlib
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from methods import PROCESSORS
@@ -17,7 +19,17 @@ class Task:
         self.scan_failures = data.get("scan_failures", 0)
         self.hash = data.get("hash")
         self.process_data_method = data.get("process_data_method", "process_default")
-        self.values_json = data.get("values_json")
+
+        # 🔽 Блок для безопасного чтения values_json из базы
+        raw_values = data.get("values_json")
+        if isinstance(raw_values, str):
+            try:
+                self.values_json = json.loads(raw_values)
+            except json.JSONDecodeError:
+                self.values_json = None  # или [] если нужно по умолчанию
+        else:
+            self.values_json = raw_values
+
         self.target_table_type = data.get("target_table_type")
         self.target_page_name = data.get("target_page_name")
         self.target_page_area = data.get("target_page_area")
@@ -25,15 +37,19 @@ class Task:
         self.last_update = self._parse_datetime(data.get("last_update"))
         self.update_quantity = data.get("update_quantity", 0)
         self.update_failures = data.get("update_failures", 0)
-        self.need_update = data.get("need_update", 0)
+        self.is_active = data.get("is_active", 1)
 
         # Эти поля будут заполняться в сканере
-        self.source_table = None
-        self.target_table = None
+        self.source_table = None # база данных, откуда берем данные
+        self.target_table = None # база данных, откуда берем данные
 
         self.source_doc_id = None
         self.target_doc_id = None
         self.raw_values_json = None  # Данные из сканирования
+
+        self.scanned = False  # Флаг, что задача была просканирована
+        self.proceed_and_changed = False  # Флаг, что задача была обработана
+        self.uploaded = False  # Флаг, что задача была выгружена
 
     def _parse_datetime(self, value):
         if not value:
@@ -45,6 +61,7 @@ class Task:
             return dt
         except Exception:
             return None
+        
     def is_ready_to_scan(self):
         if not self.last_scan:
             return True
@@ -62,11 +79,10 @@ class Task:
         if success:
             self.scan_quantity += 1
             self.scan_failures = 0
-            self.need_update = 1  # флаг, что задачу нужно потом выгрузить
+            self.scanned = 1  # флаг, что задачу нужно обрабатывать
         else:
             self.scan_failures += 1
-            self.need_update = 0  # сбрасываем, чтобы не выгружалась при ошибке
-            self.raw_values_json = None  # очищаем полученные данные
+            self.scanned = 0    # флаг, что задачу не нужно обрабатывать
 
     def process_raw_value(self):
         if not self.raw_values_json:
@@ -78,9 +94,6 @@ class Task:
         if not process_func:
             raise ValueError(f"Неизвестный метод обработки: {method_name}")
 
-        processed_values = process_func(self.raw_values_json)
-        self.values_json = processed_values
-
         try:
             processed_values = process_func(self.raw_values_json)
             if not isinstance(processed_values, list) or not all(isinstance(row, list) for row in processed_values):
@@ -89,24 +102,34 @@ class Task:
         except Exception as e:
             raise ValueError(f"❌ Ошибка при вызове {method_name}: {e}")
 
+
     def check_for_update(self):
         if not self.values_json:
-            self.need_update = 0
+            self.proceed_and_changed = 0
             return
 
-        import hashlib
-        processed = str(self.values_json).encode("utf-8")
-        new_hash = hashlib.md5(processed).hexdigest()
+        try:
+            # 🔒 Стабильная сериализация
+            serialized = json.dumps(self.values_json, separators=(",", ":"), ensure_ascii=False)
+            processed = serialized.encode("utf-8")
+            new_hash = hashlib.md5(processed).hexdigest()
+        except Exception as e:
+            # Если что-то пошло не так — безопасно пропустить
+            self.proceed_and_changed = 0
+            return
 
         if new_hash != self.hash:
             self.hash = new_hash
-            self.need_update = 1
+            self.proceed_and_changed = 1
         else:
-            self.need_update = 0
+            self.proceed_and_changed = 0
+
 
     def update_after_upload(self, success):
         if success:
             self.last_update = datetime.now(ZoneInfo(TIMEZONE))
             self.update_quantity += 1
+            self.uploaded = 1  # флаг, что задача была выгружена
         else:
             self.update_failures += 1
+            self.uploaded = 0  # флаг, что задача не была выгружена

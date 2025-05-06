@@ -28,29 +28,28 @@ def return_tracked_tables(conn):
 def load_sheetsinfo_tasks(conn):
     """Загрузка актуальных задач из SheetsInfo."""
     cursor = conn.cursor()
-    tz = ZoneInfo(TIMEZONE)
-    now = datetime.now(tz)
+    now = datetime.now(ZoneInfo(TIMEZONE))
 
     cursor.execute("SELECT * FROM SheetsInfo")
     rows = cursor.fetchall()
 
     tasks = []
     for row in rows:
+        if row["is_active"] == 0:
+            continue
         last_scan = row["last_scan"]
         scan_interval = row["scan_interval"]
 
+        # === Безопасная обработка last_scan ===
         if not last_scan or last_scan == "NULL":
-            last_scan_dt = datetime.min.replace(tzinfo=tz)
+            last_scan_dt = datetime.min.replace(tzinfo=ZoneInfo(TIMEZONE))
         else:
             last_scan_dt = datetime.fromisoformat(last_scan)
-            if last_scan_dt.tzinfo is None:
-                last_scan_dt = last_scan_dt.replace(tzinfo=tz)
 
         if now >= last_scan_dt + timedelta(seconds=scan_interval):
             task = Task(dict(row))
             task.source_table = "SheetsInfo"
             tasks.append(task)
-
     return tasks
 
 def load_rotationsinfo_tasks(conn):
@@ -66,7 +65,8 @@ def load_rotationsinfo_tasks(conn):
     for row in rows:
         if row["source_page_name"] not in active_tabs:
             continue
-
+        if row["is_active"] == 0:
+            continue
         last_scan = row["last_scan"]
         scan_interval = row["scan_interval"]
 

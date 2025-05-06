@@ -1,28 +1,31 @@
 # keyboards.py
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from settings_access import is_scanner_enabled
 
 def main_menu_kb():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📊 RotationsInfo", callback_data="rotations")],
-        [InlineKeyboardButton(text="📋 SheetsInfo", callback_data="sheets")],
-        [InlineKeyboardButton(text="📦 TrackedTables", callback_data="tracked")],
-        [InlineKeyboardButton(text="🪵 Логи сканеров", callback_data="logs:scanner")]
+    buttons = [[
+        InlineKeyboardButton(text="📊 RotationsInfo", callback_data="rotations"),
+        InlineKeyboardButton(text="📋 SheetsInfo", callback_data="sheets")
+    ], [
+        InlineKeyboardButton(text="📦 TrackedTables", callback_data="tracked")
+    ]]
+
+    rot = is_scanner_enabled("rotations_scanner")
+    sheets = is_scanner_enabled("sheets_scanner")
+
+    buttons.append([
+        InlineKeyboardButton(
+            text="🟢 Rotations ON" if rot else "🔴 Rotations OFF",
+            callback_data="toggle:rotations"
+        ),
+        InlineKeyboardButton(
+            text="🟢 Sheets ON" if sheets else "🔴 Sheets OFF",
+            callback_data="toggle:sheets"
+        )
     ])
 
-def rotations_shift_kb(tabs: list[str]):
-    buttons = []
-    row = []
-    for i, tab in enumerate(tabs):
-        row.append(InlineKeyboardButton(text=tab, callback_data=f"shift:{tab}"))
-        if len(row) == 2:
-            buttons.append(row)
-            row = []
-    if row:
-        buttons.append(row)
-    buttons.append([InlineKeyboardButton(text="🏠 Домой", callback_data="back:main")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
-
 
 def task_kb(tasks: list[dict]):
     rows = []
@@ -82,4 +85,17 @@ def tracked_tables_kb(docs: dict):
         InlineKeyboardButton("📆 Сменить месяц", callback_data="change:month"),
         InlineKeyboardButton("🔙 Назад", callback_data="back:main")
     ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+def rotations_shift_kb(tabs: list[str]) -> InlineKeyboardMarkup:
+    rows = []
+    row = []
+    for tab in tabs:
+        row.append(InlineKeyboardButton(text=tab, callback_data=f"shift:{tab}"))
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([InlineKeyboardButton(text="🏠 Домой", callback_data="back:main")])
     return InlineKeyboardMarkup(inline_keyboard=rows)

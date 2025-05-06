@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS SheetsInfo (
     last_update TEXT,
     update_quantity INTEGER DEFAULT 0,
     update_failures INTEGER DEFAULT 0,
-    need_update BOOLEAN DEFAULT 0
+    need_update BOOLEAN DEFAULT 0,
+    is_active INTEGER DEFAULT 1
 );
 """)
 
@@ -66,7 +67,8 @@ CREATE TABLE IF NOT EXISTS RotationsInfo (
     last_update TEXT,
     update_quantity INTEGER DEFAULT 0,
     update_failures INTEGER DEFAULT 0,
-    need_update BOOLEAN DEFAULT 0
+    need_update BOOLEAN DEFAULT 0,
+    is_active INTEGER DEFAULT 1
 );
 """)
 

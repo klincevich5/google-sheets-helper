@@ -1,13 +1,13 @@
 # sheetsinfo_scanner.py
 
 import os
-import threading
 import time
 from collections import defaultdict
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.errors import HttpError
 
+from settings_access import is_scanner_enabled
 from config import SHEETSINFO_LOG, TOKEN_PATH
 from data import load_sheetsinfo_tasks
 from logger import log_to_file, log_separator, log_section
@@ -22,30 +22,45 @@ class SheetsInfoScanner:
         self.keep_running = True
 
     def run(self):
-        # def heartbeat():
-        #     while self.keep_running:
-        #         log_to_file(self.log_file, "⏳ Ожидание следующего цикла сканирования...")
-        #         log_to_file(self.log_file, "=" * 100)
-        #         time.sleep(10)
-
-        # heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
-        # heartbeat_thread.start()
 
         while True:
             try:
-                log_section("🔄 Новый цикл сканирования SheetsInfo", self.log_file)
-
-                self.check_and_refresh_token()
-
-                self.load_tasks()
-
-                self.scan_phase()
-
-                self.process_phase()
-
-                self.update_phase()
                 
-                self.summary_report()
+                if not is_scanner_enabled("sheets_scanner"):
+                    log_to_file(self.log_file, "⏸ Сканер отключён (rotations_scanner). Ожидание...")
+                    time.sleep(10)
+                    continue
+                log_to_file(self.log_file, "🔄 Новый цикл сканирования RotationsInfo")
+
+                try:
+                    self.check_and_refresh_token()
+                except Exception as e:
+                    log_to_file(self.log_file, f"❌ Ошибка на этапе обновления токена: {e}")
+                    raise
+
+                try:
+                    self.load_tasks()
+                except Exception as e:
+                    log_to_file(self.log_file, f"❌ Ошибка на этапе загрузки задач: {e}")
+                    raise
+
+                try:
+                    self.scan_phase()
+                except Exception as e:
+                    log_to_file(self.log_file, f"❌ Ошибка на этапе сканирования: {e}")
+                    raise
+
+                try:
+                    self.process_phase()
+                except Exception as e:
+                    log_to_file(self.log_file, f"❌ Ошибка на этапе обработки: {e}")
+                    raise
+
+                try:
+                    self.update_phase()
+                except Exception as e:
+                    log_to_file(self.log_file, f"❌ Ошибка на этапе обновления: {e}")
+                    raise
 
                 time.sleep(60)
 
@@ -53,6 +68,10 @@ class SheetsInfoScanner:
                 log_separator(self.log_file)
                 log_to_file(self.log_file, f"❌ Критическая ошибка в основном цикле: {e}")
                 time.sleep(10)
+
+############################################################################################
+# проверка токена и обновление
+############################################################################################
 
     def check_and_refresh_token(self):
         log_section("🔐 Проверка работоспособности Google API токена", self.log_file)
@@ -74,6 +93,10 @@ class SheetsInfoScanner:
         else:
             log_to_file(self.log_file, "✅ Токен действителен.")
 
+#############################################################################################
+# загрузка задач из БД
+#############################################################################################
+
     def load_tasks(self):
         log_section("🧩 📥 Загрузка задач из SheetsInfo", self.log_file)
         self.tasks = load_sheetsinfo_tasks(self.conn)
@@ -86,6 +109,131 @@ class SheetsInfoScanner:
         for task in self.tasks:
             log_to_file(self.log_file, f"   • [Task] {task.source_table_type} | Страница: {task.source_page_name} | Диапазон: {task.source_page_area}")
             task.assign_doc_ids(self.doc_id_map)
+
+#############################################################################################
+# Фаза сканирования
+#############################################################################################
+
+    def scan_phase(self):
+        log_section("🔍 Фаза сканирования", self.log_file)
+
+        if not self.tasks:
+            log_to_file(self.log_file, "⚪ Нет задач для сканирования.")
+            return
+
+        ready_tasks = [task for task in self.tasks if task.is_ready_to_scan()]
+        if not ready_tasks:
+            log_to_file(self.log_file, "⚪ Нет задач, готовых к сканированию.")
+            self.metrics_scan = {"ready": 0, "success": 0, "failed": 0}
+            return
+
+        log_to_file(self.log_file, f"🔎 Найдено {len(ready_tasks)} задач, готовых к сканированию:")
+        # for task in ready_tasks:
+        #     log_to_file(self.log_file, f"   • [Task] {task.name_of_process} | Страница: {task.source_page_name} | Диапазон: {task.source_page_area}")
+
+        scan_groups = defaultdict(list)
+        for task in ready_tasks:
+            if not task.assign_doc_ids(self.doc_id_map):
+                log_to_file(self.log_file, f"⚠️ [Task {task.name_of_process}] Не удалось сопоставить doc_id. Пропуск.")
+                continue
+            scan_groups[task.scan_group].append(task)
+
+        for scan_group, group_tasks in scan_groups.items():
+            log_separator(self.log_file)
+            log_to_file(self.log_file, f"📘 Обработка scan_group: {scan_group} ({len(group_tasks)} задач)")
+
+            if not group_tasks:
+                log_to_file(self.log_file, "⚪ В группе нет задач.")
+                continue
+
+            doc_id = group_tasks[0].source_doc_id
+            unique_sheet_names = set(task.source_page_name for task in group_tasks)
+            log_to_file(self.log_file, f"Уникальные названия листов: {unique_sheet_names}")
+
+            exists_map = {}
+            for sheet_name in unique_sheet_names:
+                exists_map[sheet_name] = self.check_sheet_exists(doc_id, sheet_name)
+                log_to_file(self.log_file, f"{'✅' if exists_map[sheet_name] else '⚠️'} Лист '{sheet_name}' {'существует' if exists_map[sheet_name] else 'не найден'}.")
+
+            valid_tasks = []
+            for task in group_tasks:
+                sheet_name = task.source_page_name
+                if exists_map.get(sheet_name):
+                    log_to_file(self.log_file, f"➡️ Используем '{sheet_name}' для задачи {task.name_of_process}.")
+                    valid_tasks.append(task)
+                else:
+                    log_to_file(self.log_file, f"⛔ Пропуск задачи {task.name_of_process}: лист '{sheet_name}' не найден.")
+                    task.update_after_scan(success=False)
+                    self.update_task_scan_fields(task)
+
+            if not valid_tasks:
+                log_to_file(self.log_file, f"⚪ Все задачи группы {scan_group} отфильтрованы. Пропуск batchGet.")
+                continue
+
+            range_to_tasks = defaultdict(list)
+            for task in valid_tasks:
+                range_str = f"{task.source_page_name}!{task.source_page_area}"
+                range_to_tasks[range_str].append(task)
+
+            ranges = list(range_to_tasks.keys())
+
+            log_to_file(self.log_file, "")
+
+            log_to_file(self.log_file, f"📤 Отправка batchGet на документ {task.source_table_type} с {len(ranges)} уникальными диапазонами:")
+            for r in ranges:
+                log_to_file(self.log_file, f"   • {r}")
+
+            response_data = self.batch_get(self.service, doc_id, ranges, self.log_file)
+
+            if not response_data:
+                log_to_file(self.log_file, "❌ Пустой ответ от batchGet. Все задачи будут отмечены как неудачные.")
+                for task in valid_tasks:
+                    task.update_after_scan(success=False)
+                    self.update_task_scan_fields(task)
+                continue
+
+            normalized_response = {}
+            for k, v in response_data.items():
+                clean_key = k.replace("'", "")
+                if "!" in clean_key:
+                    sheet_name, cells_range = clean_key.split("!", 1)
+                    normalized_response[(sheet_name.strip(), cells_range.strip())] = v
+
+            log_to_file(self.log_file, "")
+            log_to_file(self.log_file, f"📥 Получены диапазоны: {list(normalized_response.keys())}")
+
+            for task in valid_tasks:
+                expected_sheet = task.source_page_name.strip()
+                expected_area_start = task.source_page_area.split(":")[0].strip()
+
+                matched_values = None
+                for (sheet_name, cells_range), values in normalized_response.items():
+                    if sheet_name == expected_sheet and cells_range.startswith(expected_area_start):
+                        matched_values = values
+                        break
+
+                if matched_values:
+                    task.raw_values_json = matched_values
+                    task.update_after_scan(success=True)
+                    self.update_task_scan_fields(task)
+                    log_to_file(self.log_file, f"✅ [Task {task.name_of_process}] Найден диапазон {sheet_name}!{cells_range}, строк: {len(matched_values)}")
+                else:
+                    task.update_after_scan(success=False)
+                    self.update_task_scan_fields(task)
+                    log_to_file(self.log_file, f"⚠️ [Task {task.name_of_process}] Диапазон {expected_sheet}!{task.source_page_area} не найден или пуст.")
+
+    def check_sheet_exists(self, spreadsheet_id, sheet_name):
+        try:
+            metadata = self.service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+            sheets = metadata.get('sheets', [])
+            for sheet in sheets:
+                title = sheet.get('properties', {}).get('title')
+                if title == sheet_name:
+                    return True
+            return False
+        except Exception as e:
+            log_to_file(self.log_file, f"❌ Ошибка при проверке листа в {spreadsheet_id}: {e}")
+            return False
 
     def update_task_scan_fields(self, task):
         cursor = self.conn.cursor()
@@ -105,21 +253,8 @@ class SheetsInfoScanner:
             task.id
         ))
 
-        log_to_file(self.log_file, f"💾 Сохраняю в БД [Task {task.name_of_process}] → need_update={task.need_update}, hash={task.hash}")
+        log_to_file(self.log_file, f"💾 Сохраняю в БД [Task {task.name_of_process}] → proceed_and_changed={task.proceed_and_changed}, hash={task.hash}")
         self.conn.commit()
-
-    def check_sheet_exists(self, spreadsheet_id, sheet_name):
-        try:
-            metadata = self.service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
-            sheets = metadata.get('sheets', [])
-            for sheet in sheets:
-                title = sheet.get('properties', {}).get('title')
-                if title == sheet_name:
-                    return True
-            return False
-        except Exception as e:
-            log_to_file(self.log_file, f"❌ Ошибка при проверке листа в {spreadsheet_id}: {e}")
-            return False
 
     def batch_get(self, service, spreadsheet_id, ranges, log_file, retries=5, delay_seconds=5):
         attempt = 0
@@ -157,174 +292,21 @@ class SheetsInfoScanner:
                     return {}
         log_to_file(log_file, "❌ Превышено количество попыток batchGet.")
         return {}
-        
-    def summary_report(self):
-        log_section("📈 Итоги текущего цикла сканирования", self.log_file)
 
-        scan = getattr(self, "metrics_scan", {"ready": 0, "success": 0, "failed": 0})
-        process = getattr(self, "metrics_process", {"success": 0, "skipped": 0, "failed": 0})
-        update = getattr(self, "metrics_update", {"updated": 0, "skipped": 0, "failed": 0})
-
-        log_to_file(self.log_file, "🔍 Сканирование:")
-        log_to_file(self.log_file, f"   • Готово к сканированию: {scan['ready']}")
-        log_to_file(self.log_file, f"   • Успешно отсканировано: {scan['success']}")
-        log_to_file(self.log_file, f"   • Ошибок/пропусков: {scan['failed']}")
-
-        log_to_file(self.log_file, "🛠️ Обработка:")
-        log_to_file(self.log_file, f"   • Успешно обработано: {process['success']}")
-        log_to_file(self.log_file, f"   • Пропущено: {process['skipped']}")
-        log_to_file(self.log_file, f"   • Ошибок: {process['failed']}")
-
-        log_to_file(self.log_file, "🔼 Обновление:")
-        log_to_file(self.log_file, f"   • Успешно обновлено: {update['updated']}")
-        log_to_file(self.log_file, f"   • Пропущено: {update['skipped']}")
-        log_to_file(self.log_file, f"   • Ошибок обновления: {update['failed']}")
-        log_to_file(self.log_file, "=" * 100)
-
-    def scan_phase(self):
-        log_section("🔍 Фаза сканирования", self.log_file)
-
-        if not self.tasks:
-            log_to_file(self.log_file, "⚪ Нет задач для сканирования.")
-            self.metrics_scan = {"ready": 0, "success": 0, "failed": 0}
-            return
-
-        ready_tasks = [task for task in self.tasks if task.is_ready_to_scan()]
-        if not ready_tasks:
-            log_to_file(self.log_file, "⚪ Нет задач, готовых к сканированию.")
-            self.metrics_scan = {"ready": 0, "success": 0, "failed": 0}
-            return
-
-        log_to_file(self.log_file, f"🔎 Найдено {len(ready_tasks)} задач, готовых к сканированию:")
-        for task in ready_tasks:
-            log_to_file(self.log_file, f"   • [Task] {task.name_of_process} | Страница: {task.source_page_name} | Диапазон: {task.source_page_area}")
-
-        scan_groups = defaultdict(list)
-        for task in ready_tasks:
-            if not task.assign_doc_ids(self.doc_id_map):
-                log_to_file(self.log_file, f"⚠️ [Task {task.name_of_process}] Не удалось сопоставить doc_id. Пропуск.")
-                continue
-            scan_groups[task.scan_group].append(task)
-
-        total_success = 0
-        total_failed = 0
-
-        for scan_group, group_tasks in scan_groups.items():
-            log_separator(self.log_file)
-            log_to_file(self.log_file, f"📘 Обработка scan_group: {scan_group} ({len(group_tasks)} задач)")
-
-            if not group_tasks:
-                log_to_file(self.log_file, "⚪ В группе нет задач.")
-                continue
-
-            doc_id = group_tasks[0].source_doc_id
-            unique_sheet_names = set(task.source_page_name for task in group_tasks)
-            log_to_file(self.log_file, f"Уникальные названия листов: {unique_sheet_names}")
-
-            exists_map = {}
-            for sheet_name in unique_sheet_names:
-                exists_map[sheet_name] = self.check_sheet_exists(doc_id, sheet_name)
-                log_to_file(self.log_file, f"{'✅' if exists_map[sheet_name] else '⚠️'} Лист '{sheet_name}' {'существует' if exists_map[sheet_name] else 'не найден'}.")
-
-            valid_tasks = []
-            for task in group_tasks:
-                sheet_name = task.source_page_name
-                if exists_map.get(sheet_name):
-                    log_to_file(self.log_file, f"➡️ Используем '{sheet_name}' для задачи {task.name_of_process}.")
-                    valid_tasks.append(task)
-                else:
-                    log_to_file(self.log_file, f"⛔ Пропуск задачи {task.name_of_process}: лист '{sheet_name}' не найден.")
-                    task.update_after_scan(success=False)
-                    self.update_task_scan_fields(task)
-                    total_failed += 1
-
-            if not valid_tasks:
-                log_to_file(self.log_file, f"⚪ Все задачи группы {scan_group} отфильтрованы. Пропуск batchGet.")
-                continue
-
-            range_to_tasks = defaultdict(list)
-            for task in valid_tasks:
-                range_str = f"{task.source_page_name}!{task.source_page_area}"
-                range_to_tasks[range_str].append(task)
-
-            ranges = list(range_to_tasks.keys())
-
-            log_to_file(self.log_file, "")
-
-            log_to_file(self.log_file, f"📤 Отправка batchGet на документ {task.source_table_type} с {len(ranges)} уникальными диапазонами:")
-            for r in ranges:
-                log_to_file(self.log_file, f"   • {r}")
-
-            response_data = self.batch_get(self.service, doc_id, ranges, self.log_file)
-
-            if not response_data:
-                log_to_file(self.log_file, "❌ Пустой ответ от batchGet. Все задачи будут отмечены как неудачные.")
-                for task in valid_tasks:
-                    task.update_after_scan(success=False)
-                    self.update_task_scan_fields(task)
-                    total_failed += 1
-                continue
-
-            normalized_response = {}
-            for k, v in response_data.items():
-                clean_key = k.replace("'", "")
-                if "!" in clean_key:
-                    sheet_name, cells_range = clean_key.split("!", 1)
-                    normalized_response[(sheet_name.strip(), cells_range.strip())] = v
-
-            log_to_file(self.log_file, "")
-            log_to_file(self.log_file, f"📥 Получены диапазоны: {list(normalized_response.keys())}")
-
-            for task in valid_tasks:
-                expected_sheet = task.source_page_name.strip()
-                expected_area_start = task.source_page_area.split(":")[0].strip()
-
-                matched_values = None
-                for (sheet_name, cells_range), values in normalized_response.items():
-                    if sheet_name == expected_sheet and cells_range.startswith(expected_area_start):
-                        matched_values = values
-                        break
-
-                if matched_values:
-                    task.raw_values_json = matched_values
-                    task.update_after_scan(success=True)
-                    self.update_task_scan_fields(task)
-                    log_to_file(self.log_file, f"✅ [Task {task.name_of_process}] Найден диапазон {sheet_name}!{cells_range}, строк: {len(matched_values)}")
-                    total_success += 1
-                else:
-                    task.update_after_scan(success=False)
-                    self.update_task_scan_fields(task)
-                    log_to_file(self.log_file, f"⚠️ [Task {task.name_of_process}] Диапазон {expected_sheet}!{task.source_page_area} не найден или пуст.")
-                    total_failed += 1
-
-        log_separator(self.log_file)
-        log_to_file(self.log_file, "📊 Результаты фазы сканирования:")
-        log_to_file(self.log_file, f"   • ✅ Успешно отсканировано: {total_success}")
-        log_to_file(self.log_file, f"   • ❌ Ошибок/пропусков: {total_failed}")
-        log_to_file(self.log_file, f"   • 🟡 Всего готовых к сканированию: {len(ready_tasks)}")
-
-        self.metrics_scan = {
-            "ready": len(ready_tasks),
-            "success": total_success,
-            "failed": total_failed
-        }
+#############################################################################################
+# Фаза обработки
+#############################################################################################
 
     def process_phase(self):
         log_section("🛠️ Фаза обработки", self.log_file)
 
         if not self.tasks:
             log_to_file(self.log_file, "⚪ Нет задач для обработки.")
-            self.metrics_process = {"success": 0, "skipped": 0, "failed": 0}
             return
-
-        processed = 0
-        skipped = 0
-        failed = 0
-
+        
         for task in self.tasks:
-            if not task.raw_values_json:
-                log_to_file(self.log_file, f"⚪ [Task {task.name_of_process}] Нет сырых данных для обработки.")
-                skipped += 1
+            if task.scanned == 0:
+                log_to_file(self.log_file, f"⚪ [Task {task.name_of_process}] Задача не была отсканирована. Пропуск.")
                 continue
 
             try:
@@ -339,7 +321,6 @@ class SheetsInfoScanner:
                         log_to_file(self.log_file, f"      ...ещё {len(task.values_json) - 5} строк скрыто")
                 except Exception as e:
                     log_to_file(self.log_file, f"❌ [Task {task.name_of_process}] Ошибка в process_raw_value: {e}")
-                    failed += 1
                     continue
 
                 try:
@@ -353,7 +334,7 @@ class SheetsInfoScanner:
                     log_to_file(self.log_file, f"     • Новый хеш : {new_hash}")
                     log_to_file(self.log_file, "")
 
-                    if task.need_update:
+                    if task.proceed_and_changed:
                         log_to_file(self.log_file, "🔁 Изменения обнаружены — задача будет обновлена.")
                         self.update_task_process_fields(task)
                         log_to_file(self.log_file, f"✅ [Task {task.name_of_process}] Успешно обработана и записана в БД.")
@@ -361,48 +342,47 @@ class SheetsInfoScanner:
                         log_to_file(self.log_file, "⚪ Изменений нет — обновление не требуется.")
                 except Exception as e:
                     log_to_file(self.log_file, f"❌ [Task {task.name_of_process}] Ошибка в check_for_update: {e}")
-                    failed += 1
                     continue
-
-                log_separator(self.log_file)
-                processed += 1
 
             except Exception as e:
                 log_to_file(self.log_file, f"❌ [Task {task.name_of_process}] Ошибка обработки: {e}")
-                failed += 1
 
-        log_to_file(self.log_file, "📊 Результаты фазы обработки:")
-        log_to_file(self.log_file, f"   • ✅ Успешно обработано: {processed}")
-        log_to_file(self.log_file, f"   • ⚪ Пропущено (нет данных): {skipped}")
-        log_to_file(self.log_file, f"   • ❌ С ошибками: {failed}")
+    def update_task_process_fields(self, task):
+        cursor = self.conn.cursor()
+        table = "SheetsInfo"
+        cursor.execute(f"""
+            UPDATE {table}
+            SET
+                hash = ?,
+                values_json = ?
+            WHERE id = ?
+        """, (
+            task.hash,
+            str(task.values_json) if task.values_json else None,
+            task.id
+        ))
+        log_to_file(self.log_file, f"💾 Обновлён values_json и hash для задачи {task.name_of_process}")
+        self.conn.commit()
 
-        self.metrics_process = {
-            "success": processed,
-            "skipped": skipped,
-            "failed": failed
-        }
+#############################################################################################
+# Фаза обновления
+#############################################################################################
 
     def update_phase(self):
         log_section("🔼 Фаза обновления", self.log_file)
 
         if not self.tasks:
             log_to_file(self.log_file, "⚪ Нет задач для обновления.")
-            self.metrics_update = {"updated": 0, "skipped": 0, "failed": 0}
             return
 
-        tasks_to_update = [task for task in self.tasks if task.need_update == 1]
+        tasks_to_update = [task for task in self.tasks if task.proceed_and_changed == 1]
 
         if not tasks_to_update:
             log_to_file(self.log_file, "⚪ Нет задач, требующих обновления в Google Sheets.")
-            self.metrics_update = {"updated": 0, "skipped": 0, "failed": 0}
             return
 
         log_to_file(self.log_file, f"🔄 Начало фазы обновления. Задач для выгрузки: {len(tasks_to_update)}.")
         log_to_file(self.log_file, "=" * 100)
-
-        total_updated = 0
-        total_failed = 0
-        total_skipped = 0
 
         tasks_by_update_group = defaultdict(list)
         for task in tasks_to_update:
@@ -422,7 +402,6 @@ class SheetsInfoScanner:
                 for task in tasks:
                     if not task.values_json:
                         log_to_file(self.log_file, f"⚪ [Task {task.name_of_process}] Нет данных для отправки, пропуск.")
-                        total_skipped += 1
                         continue
                     batch_data.append({
                         "range": f"{task.target_page_name}!{task.target_page_area}",
@@ -440,7 +419,6 @@ class SheetsInfoScanner:
                         task.update_after_upload(success=True)
                         self.update_task_update_fields(task)
                     log_to_file(self.log_file, f"✅ Успешное обновление группы ({len(tasks)} задач) одним запросом.")
-                    total_updated += len(tasks)
                 else:
                     log_to_file(self.log_file, f"❌ Ошибка batchUpdate: {error}")
                     log_to_file(self.log_file, "🔄 Переходим на поштучную отправку задач.")
@@ -458,72 +436,13 @@ class SheetsInfoScanner:
                         if single_success:
                             task.update_after_upload(success=True)
                             log_to_file(self.log_file, f"✅ Успешно обновлена задача [Task {task.name_of_process}] отдельно.")
-                            total_updated += 1
                         else:
                             task.update_after_upload(success=False)
                             log_to_file(self.log_file, f"❌ Ошибка обновления [Task {task.name_of_process}] отдельно: {single_error}")
-                            total_failed += 1
 
                         self.update_task_update_fields(task)
 
                 time.sleep(2)  # Пауза между группами
-
-        log_to_file(self.log_file, "📊 Результаты фазы обновления:")
-        log_to_file(self.log_file, f"   • ✅ Успешно обновлено: {total_updated}")
-        log_to_file(self.log_file, f"   • ❌ Неудачных обновлений: {total_failed}")
-        log_to_file(self.log_file, f"   • ⚪ Пропущено (нет данных): {total_skipped}")
-        log_to_file(self.log_file, f"   • 🔁 Всего задач в очереди обновления: {len(tasks_to_update)}")
-
-        self.metrics_update = {
-            "updated": total_updated,
-            "failed": total_failed,
-            "skipped": total_skipped
-        }
-
-    def update_tasks_batch(self, spreadsheet_id, tasks):
-        batch_data = []
-        for task in tasks:
-            if not task.values_json:
-                log_to_file(self.log_file, f"⚪ [Task {task.name_of_process}] Нет данных, пропуск.")
-                continue
-
-            batch_data.append({
-                "range": f"{task.target_page_name}!{task.target_page_area}",
-                "values": task.values_json
-            })
-
-        if not batch_data:
-            log_to_file(self.log_file, "⚪ Нет данных для batchUpdate.")
-            return
-
-        success, error = self.batch_update(self.service, spreadsheet_id, batch_data, self.log_file)
-
-        if success:
-            for task in tasks:
-                task.update_after_upload(True)
-                self.update_task_update_fields(task)
-            log_to_file(self.log_file, f"✅ Обновлено пакетно: {len(tasks)} задач.")
-        else:
-            log_to_file(self.log_file, f"❌ Ошибка batchUpdate: {error}. Попробуем по одной.")
-
-            for task in tasks:
-                if not task.values_json:
-                    continue
-
-                data = [{
-                    "range": f"{task.target_page_name}!{task.target_page_area}",
-                    "values": task.values_json
-                }]
-                ok, err = self.batch_update(self.service, spreadsheet_id, data, self.log_file)
-
-                if ok:
-                    task.update_after_upload(True)
-                    log_to_file(self.log_file, f"✅ Обновлена [Task {task.name_of_process}] отдельно.")
-                else:
-                    task.update_after_upload(False)
-                    log_to_file(self.log_file, f"❌ Ошибка при обновлении [Task {task.name_of_process}]: {err}")
-
-                self.update_task_update_fields(task)
 
     def batch_update(self, service, spreadsheet_id, batch_data, log_file, retries=3, delay_seconds=10):
         for attempt in range(retries):
@@ -549,25 +468,6 @@ class SheetsInfoScanner:
                 return False, str(e)
         return False, "Превышено число попыток"
 
-    def update_task_process_fields(self, task):
-        cursor = self.conn.cursor()
-        table = "SheetsInfo"
-        cursor.execute(f"""
-            UPDATE {table}
-            SET
-                hash = ?,
-                values_json = ?,
-                need_update = ?
-            WHERE id = ?
-        """, (
-            task.hash,
-            str(task.values_json) if task.values_json else None,
-            task.need_update,
-            task.id
-        ))
-        log_to_file(self.log_file, f"💾 Обновлён values_json и hash для задачи {task.name_of_process}")
-        self.conn.commit()
-
     def update_task_update_fields(self, task):
         cursor = self.conn.cursor()
         table = "SheetsInfo"
@@ -577,13 +477,11 @@ class SheetsInfoScanner:
                 last_update = ?,
                 update_quantity = ?,
                 update_failures = ?,
-                need_update = ?
             WHERE id = ?
         """, (
             task.last_update.isoformat() if task.last_update else None,
             task.update_quantity,
             task.update_failures,
-            task.need_update,
             task.id
         ))
         log_to_file(self.log_file, f"💾 Обновлён статус обновления для задачи {task.name_of_process}")

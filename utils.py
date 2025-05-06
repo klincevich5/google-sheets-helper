@@ -36,7 +36,7 @@ def build_doc_id_map(tracked_tables):
     from datetime import datetime
 
     today = datetime.now().date()
-    today = datetime(2025, 4, 5).date()
+    # today = datetime(2025, 4, 5).date()
     print(f"📅 Сегодня: {today}")
 
     doc_id_map = {}
@@ -69,6 +69,6 @@ def get_active_tabs(now=None):
         tab_list.append(f"DAY {now.day}")
         tab_list.append(f"NIGHT {yesterday.day}")
     
-    tab_list = ["DAY 1"]
+    # tab_list = ["DAY 1"]
 
     return tab_list

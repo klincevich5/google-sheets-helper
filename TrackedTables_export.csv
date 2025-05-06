@@ -1,4 +1,4 @@
-﻿id,table_type,label,spreadsheet_id,valid_from,valid_to
+id,table_type,label,spreadsheet_id,valid_from,valid_to
 1,qa_list,QA List,10n0pf5qP26ALbpe0-vVlaILzmdUF8d529yN6Mt8hS9c,01.01.2024,31.12.2026
 2,feedbacks,Feedbacks April 2025,1DrXJDAFdEm86MmKOPbiJjac6IvYmmUfjK_CFJwLr9ZM,01.04.2025,30.04.2025
 3,bonus,Bonus April 2025,14q-CItoITjj2L-VdyTkhPy2umyPz9oeUzNJzHyMJLho,01.04.2025,30.04.2025
@@ -24,5 +24,15 @@
 23,tristar_rotation,TRI-STAR Rotation May 2025,1nhYm71aSjDhSbTwt_mZqvYmbYxFjN2EsRSHihd3uuvI,01.05.2025,31.05.2025
 24,tritonrl_rotation,AquaRL Rotation May 2025,1wkJg7pio8KdNJOlOcl4BLuzF38AJlaQ0omNVZERPj,01.05.2025,31.05.2025
 25,main_screen_rotation,Main Screen Rotation May 2025,1SJ-r29TDQpY2wUpkrHkoKzeHHcNcsSq4oL0oC2Plw94,01.05.2025,31.05.2025
-
-
+26,feedbacks,FEEDBACKS,,01.06.2025,30.06.2025
+27,bonus,BONUS,,01.06.2025,30.06.2025
+28,live88_bs_game,LIVE88_BS_GAME,,01.06.2025,30.06.2025
+29,legendz_bs_game,LEGENDZ_BS_GAME,,01.06.2025,30.06.2025
+30,shuffle_rotation,SHUFFLE_ROTATION,,01.06.2025,30.06.2025
+31,vip_rotation,VIP_ROTATION,,01.06.2025,30.06.2025
+32,generic_rotation,GENERIC_ROTATION,,01.06.2025,30.06.2025
+33,gsbj_rotation,GSBJ_ROTATION,,01.06.2025,30.06.2025
+34,legendz_rotation,LEGENDZ_ROTATION,,01.06.2025,30.06.2025
+35,tristar_rotation,TRISTAR_ROTATION,,01.06.2025,30.06.2025
+36,tritonrl_rotation,TRITONRL_ROTATION,,01.06.2025,30.06.2025
+37,main_screen_rotation,MAIN_SCREEN_ROTATION,,01.06.2025,30.06.2025

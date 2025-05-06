@@ -144,15 +144,15 @@ def get_task_by_id(task_id):
         }
     return None
 
-def get_logs_for_task(task_id: str):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT name_of_process FROM RotationsInfo WHERE id = ?", (task_id,))
-    row = cursor.fetchone()
-    conn.close()
-    if not row:
-        return "⚠️ Задача не найдена"
-    name = row[0]
-    lines = tail_log(50).splitlines()
-    filtered = [line for line in lines if name in line]
-    return "\n".join(filtered[-10:]) or "🔍 Нет логов по задаче"
+# def get_logs_for_task(task_id: str):
+#     conn = get_connection()
+#     cursor = conn.cursor()
+#     cursor.execute("SELECT name_of_process FROM RotationsInfo WHERE id = ?", (task_id,))
+#     row = cursor.fetchone()
+#     conn.close()
+#     if not row:
+#         return "⚠️ Задача не найдена"
+#     name = row[0]
+#     lines = tail_log(50).splitlines()
+#     filtered = [line for line in lines if name in line]
+#     return "\n".join(filtered[-10:]) or "🔍 Нет логов по задаче"

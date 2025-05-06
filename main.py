@@ -7,7 +7,8 @@ import sys
 import logging
 import asyncio
 import platform
-
+import subprocess
+from database import create_scanner_logs_table
 from rotationsinfo_scanner import RotationsInfoScanner
 from sheetsinfo_scanner import SheetsInfoScanner
 from database import connect_to_db
@@ -23,30 +24,21 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from handlers import menu
 
+from settings_access import ensure_bot_settings_table, is_scanner_enabled
+
 # ⬇️ Только для Windows
 if platform.system() == "Windows":
     import winloop
     winloop.install()
 
 stop_event = threading.Event()
+
 load_dotenv()
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
-
-async def main_bot():
-    bot = Bot(
-        token=BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-    )
-    dp = Dispatcher(storage=MemoryStorage())
-
-    dp.include_routers(menu.router)
-
-    logging.info("🚀 Бот запущен")
-    await dp.start_polling(bot)
+# logging.basicConfig(
+#     level=logging.INFO,
+#     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+# )
 
 def start_rotations_scanner(conn, service, doc_id_map):
     while not stop_event.is_set():
@@ -72,8 +64,10 @@ def signal_handler(sig, frame):
     stop_event.set()
     sys.exit(0)
 
-def main():
-    print("🚀 Инициализация скрипта...")
+async def main():
+    print("🚀 Инициализация...")
+    create_scanner_logs_table() 
+    ensure_bot_settings_table()
 
     conn = connect_to_db(DB_PATH)
     service = load_credentials()
@@ -82,20 +76,31 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    print("🔄 Запуск потоков сканирования...")
+    # ✅ Запускаем сканеры в отдельных потоках
+    if is_scanner_enabled("rotations_scanner"):
+        threading.Thread(
+            target=start_rotations_scanner,
+            args=(conn, service, doc_id_map),
+            daemon=True
+        ).start()
 
-    # thread_rotations = threading.Thread(target=start_rotations_scanner, args=(conn, service, doc_id_map), daemon=True)
-    thread_sheets = threading.Thread(target=start_sheets_scanner, args=(conn, service, doc_id_map), daemon=True)
+    if is_scanner_enabled("sheets_scanner"):
+        threading.Thread(
+            target=start_sheets_scanner,
+            args=(conn, service, doc_id_map),
+            daemon=True
+        ).start()
 
-    # thread_rotations.start()
-    thread_sheets.start()
+    # ✅ Запускаем бота в главном потоке (обязательно)
+    bot = Bot(
+        token=BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+    )
+    dp = Dispatcher(storage=MemoryStorage())
+    dp.include_routers(menu.router)
 
-    # Основной поток будет ждать, пока stop_event не будет установлен
-    while not stop_event.is_set():
-        time.sleep(1)
+    logging.info("🚀 Бот запущен")
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    # Можно переключать поведение по аргументу или переменной окружения
-    asyncio.run(main_bot())
-    main()
-    # Или, если нужно запускать и потоки, и бота — можно объединить логики
+    asyncio.run(main())
