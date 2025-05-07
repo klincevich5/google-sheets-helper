@@ -2,33 +2,47 @@
 
 from datetime import datetime, timedelta
 from models import Task
-from utils import get_active_tabs
 from zoneinfo import ZoneInfo
 
 from config import TIMEZONE
 
+# actual_date_now = datetime.now(ZoneInfo(TIMEZONE))
+actual_date_now = datetime(2025, 4, 4, 10, 0, tzinfo=ZoneInfo(TIMEZONE))
+
+#################################################################################
+# Получаю актуальные TrackedTables ID
+#################################################################################
+
 def return_tracked_tables(conn):
-    """Получение списка таблиц из TrackedTables."""
+    """
+    Получение карты соответствия table_type -> spreadsheet_id из таблицы TrackedTables,
+    с учётом даты действия (valid_from, valid_to).
+    """
+    today = actual_date_now.date()
+    print(f"📅 Сегодня: {today}")
+
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM TrackedTables")
     rows = cursor.fetchall()
 
-    tracked_tables = []
+    doc_id_map = {}
+
     for row in rows:
-        tracked_tables.append({
-            "id": row["id"],
-            "table_type": row["table_type"],
-            "label": row["label"],
-            "spreadsheet_id": row["spreadsheet_id"],
-            "valid_from": row["valid_from"],
-            "valid_to": row["valid_to"]
-        })
-    return tracked_tables
+        valid_from = datetime.strptime(row["valid_from"], "%d.%m.%Y").date()
+        valid_to = datetime.strptime(row["valid_to"], "%d.%m.%Y").date()
+        if valid_from <= today <= valid_to:
+            doc_id_map[row["table_type"]] = row["spreadsheet_id"]
+
+    return doc_id_map
+
+#################################################################################
+# Загрузка актуальных задач из SheetsInfo
+#################################################################################
 
 def load_sheetsinfo_tasks(conn):
     """Загрузка актуальных задач из SheetsInfo."""
     cursor = conn.cursor()
-    now = datetime.now(ZoneInfo(TIMEZONE))
+    now = actual_date_now
 
     cursor.execute("SELECT * FROM SheetsInfo")
     rows = cursor.fetchall()
@@ -52,10 +66,39 @@ def load_sheetsinfo_tasks(conn):
             tasks.append(task)
     return tasks
 
+#################################################################################
+# Загрузка актуальных задач из RotationsInfo
+#################################################################################
+
+def get_active_tabs(now=None):
+    if not now:
+        now = actual_date_now
+    hour = now.hour
+    tab_list = []
+
+    if 9 <= hour < 19:
+        tab_list.append(f"DAY {now.day}")
+    elif 19 <= hour < 21:
+        tab_list.append(f"DAY {now.day}")
+        tab_list.append(f"NIGHT {now.day}")
+    elif 21 <= hour <= 23:
+        tab_list.append(f"NIGHT {now.day}")
+    elif 0 <= hour < 7:
+        yesterday = now - timedelta(days=1)
+        tab_list.append(f"NIGHT {yesterday.day}")
+    elif 7 <= hour < 9:
+        yesterday = now - timedelta(days=1)
+        tab_list.append(f"DAY {now.day}")
+        tab_list.append(f"NIGHT {yesterday.day}")
+    
+    tab_list = ["DAY 1", "NIGHT 1"]
+
+    return tab_list
+
 def load_rotationsinfo_tasks(conn):
     """Загрузка актуальных задач из RotationsInfo."""
     cursor = conn.cursor()
-    now = datetime.now(ZoneInfo(TIMEZONE))
+    now = actual_date_now
     active_tabs = get_active_tabs(now)
 
     cursor.execute("SELECT * FROM RotationsInfo")
@@ -69,12 +112,11 @@ def load_rotationsinfo_tasks(conn):
             continue
         last_scan = row["last_scan"]
         scan_interval = row["scan_interval"]
-
+        
         if not last_scan or last_scan == "NULL":
             last_scan_dt = datetime.min.replace(tzinfo=ZoneInfo(TIMEZONE))
         else:
             last_scan_dt = datetime.fromisoformat(last_scan)
-
         if now >= last_scan_dt + timedelta(seconds=scan_interval):
             task = Task(dict(row))
             task.source_table = "RotationsInfo"

@@ -7,43 +7,49 @@ import sys
 import logging
 import asyncio
 import platform
-import subprocess
-from database import create_scanner_logs_table
-from rotationsinfo_scanner import RotationsInfoScanner
-from sheetsinfo_scanner import SheetsInfoScanner
-from database import connect_to_db
-from data import return_tracked_tables
-from utils import load_credentials, build_doc_id_map
-from logger import log_to_file
-from config import DB_PATH, MAIN_LOG, BOT_TOKEN
-
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
-from handlers import menu
 
+from database import create_scanner_logs_table, connect_to_db, create_api_usage_table
+from config import (
+    DB_PATH,
+    MAIN_LOG,
+    BOT_TOKEN,
+    SHEETSINFO_TOKEN,
+    ROTATIONSINFO_TOKEN_1,
+    ROTATIONSINFO_TOKEN_2
+)
+from utils import load_credentials
+from logger import log_to_file
+from data import return_tracked_tables
 from settings_access import ensure_bot_settings_table, is_scanner_enabled
+from handlers import menu
+from rotationsinfo_scanner import RotationsInfoScanner
+from sheetsinfo_scanner import SheetsInfoScanner
 
 # ⬇️ Только для Windows
 if platform.system() == "Windows":
     import winloop
     winloop.install()
 
-stop_event = threading.Event()
-
+# Загрузка .env
 load_dotenv()
 
-# logging.basicConfig(
-#     level=logging.INFO,
-#     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-# )
+# Карта токенов для Rotation Scanner
+rotation_tokens = {
+    "RotationsInfo_scanner_1": ROTATIONSINFO_TOKEN_1,
+    "RotationsInfo_scanner_2": ROTATIONSINFO_TOKEN_2
+}
 
-def start_rotations_scanner(conn, service, doc_id_map):
+stop_event = threading.Event()
+
+def start_rotations_scanner(conn, rotation_tokens, doc_id_map):
     while not stop_event.is_set():
         try:
-            scanner = RotationsInfoScanner(conn, service, doc_id_map)
+            scanner = RotationsInfoScanner(conn, rotation_tokens, doc_id_map)
             scanner.run()
         except Exception as e:
             log_to_file(MAIN_LOG, f"❌ Ошибка в потоке RotationsInfoScanner: {e}")
@@ -66,32 +72,36 @@ def signal_handler(sig, frame):
 
 async def main():
     print("🚀 Инициализация...")
+
+    # Подготовка БД
     create_scanner_logs_table() 
     ensure_bot_settings_table()
+    create_api_usage_table()
 
     conn = connect_to_db(DB_PATH)
-    service = load_credentials()
-    doc_id_map = build_doc_id_map(return_tracked_tables(conn))
+    doc_id_map = return_tracked_tables(conn)
 
+    # Telegram-бот
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    # ✅ Запускаем сканеры в отдельных потоках
+    # ✅ Запускаем сканеры
     if is_scanner_enabled("rotations_scanner"):
         threading.Thread(
             target=start_rotations_scanner,
-            args=(conn, service, doc_id_map),
+            args=(conn, rotation_tokens, doc_id_map),
             daemon=True
         ).start()
 
-    if is_scanner_enabled("sheets_scanner"):
-        threading.Thread(
-            target=start_sheets_scanner,
-            args=(conn, service, doc_id_map),
-            daemon=True
-        ).start()
+    # if is_scanner_enabled("sheets_scanner"):
+    #     sheets_service = load_credentials(SHEETSINFO_TOKEN)
+    #     threading.Thread(
+    #         target=start_sheets_scanner,
+    #         args=(conn, sheets_service, doc_id_map),
+    #         daemon=True
+    #     ).start()
 
-    # ✅ Запускаем бота в главном потоке (обязательно)
+    # ✅ Запускаем Telegram-бота
     bot = Bot(
         token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)

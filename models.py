@@ -48,7 +48,8 @@ class Task:
         self.raw_values_json = None  # Данные из сканирования
 
         self.scanned = False  # Флаг, что задача была просканирована
-        self.proceed_and_changed = False  # Флаг, что задача была обработана
+        self.proceed = False  # Флаг, что задача была обработана
+        self.changed = False  # Флаг, что задача была изменена
         self.uploaded = False  # Флаг, что задача была выгружена
 
     def _parse_datetime(self, value):
@@ -74,9 +75,8 @@ class Task:
         return self.source_doc_id is not None and self.target_doc_id is not None
         
     def update_after_scan(self, success: bool):
-        self.last_scan = datetime.now(ZoneInfo(TIMEZONE))
-
         if success:
+            self.last_scan = datetime.now(ZoneInfo(TIMEZONE))
             self.scan_quantity += 1
             self.scan_failures = 0
             self.scanned = 1  # флаг, что задачу нужно обрабатывать
@@ -102,10 +102,10 @@ class Task:
         except Exception as e:
             raise ValueError(f"❌ Ошибка при вызове {method_name}: {e}")
 
-
     def check_for_update(self):
         if not self.values_json:
-            self.proceed_and_changed = 0
+            self.proceed = 0
+            self.changed = 0
             return
 
         try:
@@ -113,17 +113,19 @@ class Task:
             serialized = json.dumps(self.values_json, separators=(",", ":"), ensure_ascii=False)
             processed = serialized.encode("utf-8")
             new_hash = hashlib.md5(processed).hexdigest()
-        except Exception as e:
+        except Exception:
             # Если что-то пошло не так — безопасно пропустить
-            self.proceed_and_changed = 0
+            self.proceed = 0
+            self.changed = 0
             return
 
         if new_hash != self.hash:
             self.hash = new_hash
-            self.proceed_and_changed = 1
+            self.proceed = 1
+            self.changed = 1
         else:
-            self.proceed_and_changed = 0
-
+            self.proceed = 1
+            self.changed = 0
 
     def update_after_upload(self, success):
         if success:

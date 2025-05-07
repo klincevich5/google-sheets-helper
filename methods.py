@@ -70,20 +70,13 @@ def process_shuffle_rotation(values):
         if len(row) > 0:
             cell = str(row[0]).strip().lower()
             if cell == "dealer name" and start_index is None:
-                start_index = i
-            elif cell.startswith("replacements"):
-                end_index = i
-                break
+                start_index = i + 1
+                end_index = start_index + 6
 
     if start_index is None:
         raise ValueError("❌ В process_shuffle_rotation не найдена строка 'Dealer Name'")
-    if end_index is None:
-        raise ValueError("❌ В process_shuffle_rotation не найдена строка, начинающаяся с 'Replacements'")
-    if start_index + 1 > end_index:
-        raise ValueError(f"❌ Ошибка в индексах: start={start_index}, end={end_index}")
 
-    return values[start_index + 1:end_index]
-
+    return values[start_index:end_index]
 
 def process_turkish_rotation(values):
     """

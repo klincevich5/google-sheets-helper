@@ -24,3 +24,10 @@ venv
 client_secret.json
 token.json
 data.db
+
+# Ignore Tokens folder and its contents
+Tokens/
+recreate_token/
+
+# Ignore all CSV files
+*.csv
