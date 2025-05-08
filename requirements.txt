@@ -7,3 +7,4 @@ tzdata==2023.3
 winloop==0.1.8
 aiohttp==3.8.4
 python-dotenv==1.0.0
+pathlib==1.0.1

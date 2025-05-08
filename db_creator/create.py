@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS TrackedTables (
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS SheetsInfo (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    is_active INTEGER DEFAULT 1,
     name_of_process TEXT,
     source_table_type TEXT NOT NULL,
     source_page_name TEXT NOT NULL,
@@ -38,9 +39,7 @@ CREATE TABLE IF NOT EXISTS SheetsInfo (
     update_group TEXT,
     last_update TEXT,
     update_quantity INTEGER DEFAULT 0,
-    update_failures INTEGER DEFAULT 0,
-    need_update BOOLEAN DEFAULT 0,
-    is_active INTEGER DEFAULT 1
+    update_failures INTEGER DEFAULT 0
 );
 """)
 
@@ -48,6 +47,7 @@ CREATE TABLE IF NOT EXISTS SheetsInfo (
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS RotationsInfo (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    is_active INTEGER DEFAULT 1,
     name_of_process TEXT,
     source_table_type TEXT NOT NULL,
     source_page_name TEXT NOT NULL,
@@ -66,9 +66,7 @@ CREATE TABLE IF NOT EXISTS RotationsInfo (
     update_group TEXT,
     last_update TEXT,
     update_quantity INTEGER DEFAULT 0,
-    update_failures INTEGER DEFAULT 0,
-    need_update BOOLEAN DEFAULT 0,
-    is_active INTEGER DEFAULT 1
+    update_failures INTEGER DEFAULT 0
 );
 """)
 
