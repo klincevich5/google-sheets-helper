@@ -37,10 +37,26 @@ def delete(table_name):
     """.format(table_name=table_name))
     conn.commit()
     conn.close()
-                   
+
+def clear_feedback_storage():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("DELETE FROM FeedbackStorage")
+        conn.commit()
+        print("🗑️ Таблица FeedbackStorage очищена.")
+    except Exception as e:
+        print(f"❌ Ошибка при очистке FeedbackStorage: {e}")
+    finally:
+        conn.close()
+
+# Вызов
+
 if __name__ == "__main__":
     
     # clear_db("SheetsInfo")
     # clear_db("RotationsInfo")
     # delete("SheetsInfo")
-    set()
+    clear_feedback_storage()
+    # set()

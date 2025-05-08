@@ -166,12 +166,12 @@ class SheetsInfoScanner:
 
             doc_id = group_tasks[0].source_doc_id
             unique_sheet_names = set(task.source_page_name for task in group_tasks)
-            log_to_file(self.log_file, f"Уникальные названия листов: {unique_sheet_names}")
+            # log_to_file(self.log_file, f"Уникальные названия листов: {unique_sheet_names}")
 
             exists_map = {}
             for sheet_name in unique_sheet_names:
                 exists_map[sheet_name] = self.check_sheet_exists(doc_id, sheet_name)
-                log_to_file(self.log_file, f"{'✅' if exists_map[sheet_name] else '⚠️'} Лист '{sheet_name}' {'существует' if exists_map[sheet_name] else 'не найден'}.")
+                # log_to_file(self.log_file, f"{'✅' if exists_map[sheet_name] else '⚠️'} Лист '{sheet_name}' {'существует' if exists_map[sheet_name] else 'не найден'}.")
 
             valid_tasks = []
             for task in group_tasks:
@@ -416,18 +416,33 @@ class SheetsInfoScanner:
         mistakes_to_update = [task for task in self.tasks if task.values_json and task.update_group == "update_mistakes_in_db" and has_mistakes_changes]
         log_to_file(self.log_file, f"🔼 Ошибок для обновления: {len(mistakes_to_update)}")
 
+
+        has_feedback_changes = any(task.changed for task in self.tasks if task.update_group == "feedback_status_update")
+        log_to_file(self.log_file, f"🔼 Обнаружены изменения в фидбеках: {has_feedback_changes}")
+        feedback_to_update = [task for task in self.tasks if task.values_json and task.update_group == "feedback_status_update" and has_feedback_changes]
+        log_to_file(self.log_file, f"🔼 Фидбеков для обновления: {len(feedback_to_update)}")
+
         # if tasks_to_update:
         #         try:
         #             self.import_tasks_to_update(tasks_to_update)
         #         except Exception as e:
         #             log_to_file(self.log_file, f"❌ Ошибка при обновлении tasks_to_update: {e}")
 
-        if mistakes_to_update:
+        # if mistakes_to_update:
+        #     try:
+        #         self.import_mistakes_to_update(mistakes_to_update)
+        #     except Exception as e:
+        #         log_to_file(self.log_file, f"❌ Ошибка при обновлении mistakes_to_update: {e}")
+
+        if feedback_to_update:
+            # Получаем ID таблицы для обновления фидбеков
+            sheet_id = self.doc_id_map.get("feedbacks")
             try:
-                self.import_mistakes_to_update(mistakes_to_update)
+                self.import_feedbacks_to_update(feedback_to_update, self.service, sheet_id)
             except Exception as e:
-                log_to_file(self.log_file, f"❌ Ошибка при обновлении mistakes_to_update: {e}")
-        if not tasks_to_update and not mistakes_to_update:
+                log_to_file(self.log_file, f"❌ Ошибка при обновлении feedback_to_update: {e}")
+
+        if not tasks_to_update and not mistakes_to_update and not feedback_to_update:
             log_to_file(self.log_file, "⚪ Нет задач для обновления. Пропуск.")
             return
         else:
@@ -519,6 +534,7 @@ class SheetsInfoScanner:
 ###############################################################################################
 # Импорт Ошибок в БД
 ###############################################################################################
+
     @staticmethod
     def get_floor_by_table_name(table_name: str, floor_map: dict) -> str:
         for floor, tables in floor_map.items():
@@ -599,6 +615,129 @@ class SheetsInfoScanner:
             conn.close()
             log_to_file(self.log_file, "🔄 Завершение фазы mistakes_to_update.")
 
+################################################################################################
+# Импорт статуса фидбеков
+################################################################################################
+
+    def update_gp_statuses_in_sheet(self, sheets_service, sheet_id):
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT GP_Name_Surname, Reason, Forwarded_Feedback
+                FROM FeedbackStorage
+                WHERE GP_Name_Surname IS NOT NULL AND TRIM(GP_Name_Surname) != ''
+            """)
+            rows = cursor.fetchall()
+
+            gp_status = defaultdict(lambda: "✅")
+
+            for name, reason, forwarded in rows:
+                if not reason or not reason.strip():
+                    continue
+                if not forwarded or not forwarded.strip():
+                    gp_status[name] = "❌"
+
+            result = sheets_service.spreadsheets().values().get(
+                spreadsheetId=sheet_id,
+                range="Info!A1:A300"
+            ).execute()
+
+            names_in_sheet = [row[0] for row in result.get("values", []) if row and row[0].strip()]
+            output = [[name, gp_status[name]] for name in names_in_sheet if name in gp_status]
+
+            for x, y in output:
+                print(f"Имя: {x}, Статус: {y}")
+
+            sheets_service.spreadsheets().values().update(
+                spreadsheetId=sheet_id,
+                range="Info!A1:B300",
+                valueInputOption="RAW",
+                body={"values": output}
+            ).execute()
+
+            log_to_file(self.log_file, f"📋 Обновлены статусы GP в Info!A1:B300: {len(output)} записей.")
+        except Exception as e:
+            log_to_file(self.log_file, f"❌ Ошибка при обновлении GP статусов в Info: {e}")
+        finally:
+            conn.close()
+
+    def import_feedbacks_to_update(self, feedback_to_update, sheets_service, sheet_id):
+        log_to_file(self.log_file, f"🔄 Начало фазы feedback_status_update. Задач для выгрузки: {len(feedback_to_update)}.")
+
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+
+        try:
+            for task in feedback_to_update:
+                sheet = task.raw_values_json
+                page_name = task.target_page_name
+                empty_row_streak = 0  # счётчик подряд пустых строк
+
+                for row_index, row in enumerate(sheet[1:], start=2):
+                    if not row or not row[0].isdigit():
+                        log_to_file(self.log_file, f"⚠️ Пропущена строка {row_index} из {page_name} (невалидный id): {row}")
+                        continue
+
+                    feedback_id = int(row[0])
+                    data = row[1:]
+
+                    # Нормализуем длину строки до 13 полей
+                    expected_len = 13
+                    if len(data) < expected_len:
+                        data += [None] * (expected_len - len(data))
+                    elif len(data) > expected_len:
+                        data = data[:expected_len]
+
+                    # Проверка: все ли поля (кроме Proof, т.е. data[8]) и id — пусты?
+                    essential_fields = data[:8] + data[9:]  # исключаем Proof (data[8])
+                    if all((str(f or '').strip() == '') for f in essential_fields):
+                        empty_row_streak += 1
+                    else:
+                        empty_row_streak = 0  # сброс счётчика если есть содержимое
+
+                    # Прекращаем обработку, если встретили 5 подряд "пустых" строк
+                    if empty_row_streak >= 5:
+                        log_to_file(self.log_file, f"⏹️ Импорт прерван после {empty_row_streak} подряд пустых строк (строка {row_index})")
+                        break
+
+                    try:
+                        cursor.execute("SELECT id FROM FeedbackStorage WHERE id = ?", (feedback_id,))
+                        exists = cursor.fetchone()
+
+                        if exists:
+                            cursor.execute("""
+                                UPDATE FeedbackStorage SET
+                                    Date = ?, Shift = ?, Floor = ?, Game = ?, GP_Name_Surname = ?,
+                                    SM_Name_Surname = ?, Reason = ?, Total = ?, Proof = ?,
+                                    Explanation_of_the_reason = ?, Action_taken = ?, Forwarded_Feedback = ?, Comment_after_forwarding = ?
+                                WHERE id = ?
+                            """, (*data, feedback_id))
+                            # log_to_file(self.log_file, f"🔄 Обновлён фидбек id={feedback_id} из {page_name}")
+                        else:
+                            cursor.execute("""
+                                INSERT INTO FeedbackStorage (
+                                    id, Date, Shift, Floor, Game, GP_Name_Surname,
+                                    SM_Name_Surname, Reason, Total, Proof,
+                                    Explanation_of_the_reason, Action_taken,
+                                    Forwarded_Feedback, Comment_after_forwarding
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (feedback_id, *data))
+                            # log_to_file(self.log_file, f"➕ Добавлен фидбек id={feedback_id} из {page_name}")
+
+                    except Exception as row_err:
+                        log_to_file(self.log_file, f"❌ Ошибка при обработке строки {row_index} из {page_name}: {row_err}. Строка: {row}")
+
+            conn.commit()
+            log_to_file(self.log_file, "✅ Все фидбеки успешно импортированы.")
+        except Exception as e:
+            log_to_file(self.log_file, f"❌ Ошибка при импорте фидбеков: {e}")
+        finally:
+            conn.close()
+            log_to_file(self.log_file, "🔄 Сохранение фидбеков в БД")
+            self.update_gp_statuses_in_sheet(sheets_service, sheet_id)
+            log_to_file(self.log_file, "🔄 Завершение фазы feedback_status_update.")
 
 ###############################################################################################
 # batchUpdate для обновления данных в Google Sheets
