@@ -1,9 +1,8 @@
-# database.py
+# database/database.py
 
 import sqlite3
-from core.config import DB_PATH
+from core.config import DB_PATH, TIMEZONE
 from datetime import datetime
-import os
 
 def log_to_db(conn, scanner, phase, level, message):
     cursor = conn.cursor()
@@ -11,7 +10,7 @@ def log_to_db(conn, scanner, phase, level, message):
     INSERT INTO Logs (timestamp, scanner, phase, level, message)
     VALUES (?, ?, ?, ?, ?)
     """, (
-        datetime.utcnow().isoformat(),
+        datetime.utcnow().isoformat,
         scanner,
         phase,
         level,

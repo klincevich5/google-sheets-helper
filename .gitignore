@@ -1,3 +1,5 @@
+# .gitignore
+
 # Node.js dependencies
 node_modules/
 npm-debug.log*
@@ -10,6 +12,7 @@ yarn-error.log*
 
 # Environment variables
 .env
+__init__.py
 
 # OS-specific files
 .DS_Store
@@ -20,14 +23,12 @@ Thumbs.db
 .idea/
 *.iml
 
-venv
-client_secret.json
-token.json
-data.db
-
-# Ignore Tokens folder and its contents
+# Ignore folder and files inside the following folders
 Tokens/
-recreate_token/
+__pycache__/
+venv/
 
-# Ignore all CSV files
+# Ignore all file with the following extensions
 *.csv
+*.json
+*.db

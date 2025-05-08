@@ -1,3 +1,5 @@
+# core/logic.py
+
 import hashlib
 from datetime import datetime, timedelta
 import time

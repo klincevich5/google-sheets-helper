@@ -1,10 +1,10 @@
-# menu.py
+# bot/handlers/menu.py
 
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.exceptions import TelegramBadRequest
-from utils.states import MenuStates
+from bot.states import MenuStates
 from zoneinfo import ZoneInfo
 from core.config import AUTHORIZED_USERS, TIMEZONE
 from bot.keyboards import main_menu_kb, rotations_shift_kb, task_kb, scanner_log_kb
@@ -12,7 +12,7 @@ from bot.utils_bot import (
     get_surrounding_tabs, get_logs_for_scanner, get_logs_for_shift,
     get_logs_for_rot_task, get_logs_for_sheet_task, get_current_datetime, get_connection
 )
-from database.db_access import (
+from bot.db_access import (
     get_rotations_stats, get_all_tracked_tables,
     get_rotations_tasks_by_tab, get_task_by_id,
     get_sheets_stats, get_sheets_tasks, get_sheet_by_id

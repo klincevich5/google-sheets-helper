@@ -1,4 +1,4 @@
-# data.py
+# core/data.py
 
 from datetime import datetime, timedelta
 from core.models import Task
@@ -6,8 +6,8 @@ from zoneinfo import ZoneInfo
 
 from core.config import TIMEZONE
 
-# actual_date_now = datetime.now(ZoneInfo(TIMEZONE))
-actual_date_now = datetime(2025, 4, 4, 10, 0, tzinfo=ZoneInfo(TIMEZONE))
+actual_date_now = datetime.now(ZoneInfo(TIMEZONE))
+# actual_date_now = datetime(2025, 4, 4, 10, 0, tzinfo=ZoneInfo(TIMEZONE))
 
 #################################################################################
 # Получаю актуальные TrackedTables ID
@@ -91,7 +91,7 @@ def get_active_tabs(now=None):
         tab_list.append(f"DAY {now.day}")
         tab_list.append(f"NIGHT {yesterday.day}")
     
-    tab_list = ["DAY 1", "NIGHT 1"]
+    # tab_list = ["DAY 1", "NIGHT 1"]
 
     return tab_list
 

@@ -1,4 +1,4 @@
-# rotationsinfo_scanner.py
+# scanners/rotationsinfo_scanner.py
 
 import os
 import time
@@ -356,10 +356,6 @@ class RotationsInfoScanner:
                     task.process_raw_value() # Обработка данных и сохранение в values_json
                     
                     log_to_file(self.log_file, f"📦 [Task {task.name_of_process}] После обработки: {len(task.values_json)} строк.")
-                    # for i, row in enumerate(task.values_json[:5]):
-                    #     log_to_file(self.log_file, f"      [{i+1}] {row}")
-                    # if len(task.values_json) > 5:
-                    #     log_to_file(self.log_file, f"      ...ещё {len(task.values_json) - 5} строк скрыто")
                 except Exception as e:
                     log_to_file(self.log_file, f"❌ [Task {task.name_of_process}] Ошибка в process_raw_value: {e}")
                     continue
@@ -370,9 +366,9 @@ class RotationsInfoScanner:
                     if task.changed:
                         log_to_file(self.log_file, "🔁 Изменения обнаружены — задача будет обновлена.")
                         self.update_task_process_fields(task) # Обновление в БД
-                        log_to_file(self.log_file, f"✅ [Task {task.name_of_process}] Успешно обработана и записана в БД.")
+                        log_to_file(self.log_file, f"✅ [Task {task.name_of_process}] Успешно обработана и записана в БД.\n")
                     else:
-                        log_to_file(self.log_file, "⚪ Изменений нет — обновление не требуется.")
+                        log_to_file(self.log_file, "⚪ Изменений нет — обновление не требуется.\n")
                 except Exception as e:
                     log_to_file(self.log_file, f"❌ [Task {task.name_of_process}] Ошибка в check_for_update: {e}")
                     continue
@@ -404,6 +400,8 @@ class RotationsInfoScanner:
     def update_phase(self):
 
         log_section("🔼 Фаза обновления", self.log_file)
+        time.sleep(ROTATIONSINFO_INTERVAL)
+        return # Закомментировано для тестирования
 
         has_main_changes = any(task.changed for task in self.tasks if task.update_group == "update_main")
         has_shuffle_changes = any(task.changed for task in self.tasks if "shuffle" in task.update_group)
@@ -427,6 +425,8 @@ class RotationsInfoScanner:
             return
         else:
             log_to_file(self.log_file, "🔼 Обновление завершено.")
+        
+        time.sleep(ROTATIONSINFO_INTERVAL)
 
 ##############################################################################################
 # Импорт данных в Main
@@ -669,9 +669,6 @@ class RotationsInfoScanner:
                     for task in page_tasks:
                         task.update_after_upload(False)
                         self.update_task_update_fields(task)
-
-                time.sleep(ROTATIONSINFO_INTERVAL)
-
 
 ###############################################################################################
 # batchUpdate для обновления данных в Google Sheets

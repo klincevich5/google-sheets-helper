@@ -1,4 +1,6 @@
-from database.db_access import get_connection
+# bot/settings_access.py
+
+from bot.db_access import get_connection
 
 def is_scanner_enabled(scanner_name: str) -> bool:
     """

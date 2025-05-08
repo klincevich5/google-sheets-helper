@@ -1,3 +1,5 @@
+# utils/utils.py
+
 import os
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
@@ -11,11 +13,10 @@ def load_credentials(token_path, log_file):
     при необходимости обновляет, и возвращает Google Sheets service.
     """
     creds = None
-
-    if os.path.exists(token_path):
-        creds = Credentials.from_authorized_user_file(token_path)
-    else:
+    if not os.path.exists(token_path):
         raise FileNotFoundError(f"❌ Файл токена не найден: {token_path}")
+
+    creds = Credentials.from_authorized_user_file(token_path)
 
     if creds and creds.expired and creds.refresh_token:
         try:

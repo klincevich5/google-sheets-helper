@@ -1,4 +1,4 @@
-# db_access.py
+# bot/db_access.py
 
 import sqlite3
 from core.config import DB_PATH

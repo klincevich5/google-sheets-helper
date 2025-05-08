@@ -1,4 +1,5 @@
-# logger_db.py
+# bot/logger_db.py
+
 import sqlite3
 from core.config import DB_PATH
 from datetime import datetime

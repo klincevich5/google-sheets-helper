@@ -1,7 +1,9 @@
-import sqlite3
+# db_creator/create.py
 
-db_path = "scheduler.db"
-conn = sqlite3.connect(db_path)
+import sqlite3
+from core.config import DB_PATH
+
+conn = sqlite3.connect(DB_PATH)
 cursor = conn.cursor()
 
 # ───────────── TrackedTables ─────────────

@@ -1,3 +1,5 @@
+# bot/states.py
+
 from aiogram.fsm.state import StatesGroup, State
 
 class MenuStates(StatesGroup):

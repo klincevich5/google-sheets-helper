@@ -1,7 +1,9 @@
-FROM python:3.10-slim
+# Dockerfile
+
+FROM python:3.10-alpine
 
 # Устанавливаем системные зависимости
-RUN apt-get update && apt-get install -y gcc libffi-dev libssl-dev libpq-dev
+RUN apk add --no-cache gcc musl-dev libffi-dev openssl-dev postgresql-dev
 
 # Создаем рабочую директорию
 WORKDIR /app
@@ -13,4 +15,4 @@ COPY . .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Запускаем Flask-сервер
-CMD ["python", "main.py"]
+CMD ["flask", "run", "--host=0.0.0.0", "--port=5000"]

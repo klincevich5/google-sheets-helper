@@ -1,3 +1,5 @@
+# core/models.py
+
 import json
 import hashlib
 from datetime import datetime, timedelta

@@ -1,4 +1,4 @@
-# utils_bot.py
+# bot/utils_bot.py
 
 import os
 import sqlite3

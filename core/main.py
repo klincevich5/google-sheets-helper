@@ -1,4 +1,4 @@
-# main.py
+# core/main.py
 
 import threading
 import time
@@ -6,14 +6,15 @@ import signal
 import sys
 import logging
 import asyncio
-import platform
-from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from database.database import create_scanner_logs_table, connect_to_db, create_api_usage_table
+from utils.utils import load_credentials
+from utils.logger import log_to_file
+from utils.clean import clear_db
 from core.config import (
     DB_PATH,
     MAIN_LOG,
@@ -23,25 +24,19 @@ from core.config import (
     ROTATIONSINFO_TOKEN_1,
     ROTATIONSINFO_TOKEN_2
 )
-from utils.utils import load_credentials
-from utils.logger import log_to_file
 from core.data import return_tracked_tables
 from bot.settings_access import ensure_bot_settings_table, is_scanner_enabled
 from bot.handlers import menu
 from scanners.rotationsinfo_scanner import RotationsInfoScanner
 from scanners.sheetsinfo_scanner import SheetsInfoScanner
-from utils.clean import clear_db
 
 clear_db("SheetsInfo")
 clear_db("RotationsInfo")
 
-# ⬇️ Только для Windows
-if platform.system() == "Windows":
-    import winloop
-    winloop.install()
-
-# Загрузка .env
-load_dotenv()
+# # ⬇️ Только для Windows
+# if platform.system() == "Windows":
+#     import winloop
+#     winloop.install()
 
 # Карта токенов для Rotation Scanner
 rotation_tokens = {
