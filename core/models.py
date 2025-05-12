@@ -49,10 +49,10 @@ class Task:
         self.target_doc_id = None
         self.raw_values_json = None  # Данные из сканирования
 
-        self.scanned = False  # Флаг, что задача была просканирована
-        self.proceed = False  # Флаг, что задача была обработана
-        self.changed = False  # Флаг, что задача была изменена
-        self.uploaded = False  # Флаг, что задача была выгружена
+        self.scanned = 0  # Флаг, что задача была просканирована
+        self.proceed = 0  # Флаг, что задача была обработана
+        self.changed = 0  # Флаг, что задача была изменена
+        self.uploaded = 0  # Флаг, что задача была выгружена
 
     def _parse_datetime(self, value):
         if not value:

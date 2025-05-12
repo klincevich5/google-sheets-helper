@@ -10,38 +10,32 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
-
-from database.database import create_scanner_logs_table, connect_to_db, create_api_usage_table
-from utils.utils import load_credentials
-from utils.logger import log_to_file
 from utils.clean import clear_db
+
+from database.database import connect_to_db
+from utils.logger import log_to_file
 from core.config import (
     DB_PATH,
     MAIN_LOG,
-    SHEETSINFO_LOG,
     BOT_TOKEN,
     SHEETSINFO_TOKEN,
     ROTATIONSINFO_TOKEN_1,
     ROTATIONSINFO_TOKEN_2
 )
 from core.data import return_tracked_tables
-from bot.settings_access import ensure_bot_settings_table, is_scanner_enabled
+from bot.settings_access import is_scanner_enabled
 from bot.handlers import menu
 from scanners.rotationsinfo_scanner import RotationsInfoScanner
 from scanners.sheetsinfo_scanner import SheetsInfoScanner
-
-clear_db("SheetsInfo")
-clear_db("RotationsInfo")
-
-# # ⬇️ Только для Windows
-# if platform.system() == "Windows":
-#     import winloop
-#     winloop.install()
 
 # Карта токенов для Rotation Scanner
 rotation_tokens = {
     "RotationsInfo_scanner_1": ROTATIONSINFO_TOKEN_1,
     "RotationsInfo_scanner_2": ROTATIONSINFO_TOKEN_2
+}
+
+sheet_tokens = {
+    "SheetsInfo_scanner_1": SHEETSINFO_TOKEN
 }
 
 stop_event = threading.Event()
@@ -55,10 +49,10 @@ def start_rotations_scanner(conn, rotation_tokens, doc_id_map):
             log_to_file(MAIN_LOG, f"❌ Ошибка в потоке RotationsInfoScanner: {e}")
             time.sleep(5)
 
-def start_sheets_scanner(conn, service, doc_id_map):
+def start_sheets_scanner(conn, sheet_tokens, doc_id_map):
     while not stop_event.is_set():
         try:
-            scanner = SheetsInfoScanner(conn, service, doc_id_map)
+            scanner = SheetsInfoScanner(conn, sheet_tokens, doc_id_map)
             scanner.run()
         except Exception as e:
             log_to_file(MAIN_LOG, f"❌ Ошибка в потоке SheetsInfoScanner: {e}")
@@ -73,10 +67,8 @@ def signal_handler(sig, frame):
 async def main():
     print("🚀 Инициализация...")
 
-    # Подготовка БД
-    create_scanner_logs_table() 
-    ensure_bot_settings_table()
-    create_api_usage_table()
+    # clear_db("SheetsInfo")
+    # clear_db("RotationsInfo")
 
     conn = connect_to_db(DB_PATH)
     doc_id_map = return_tracked_tables(conn)
@@ -94,10 +86,9 @@ async def main():
         ).start()
 
     if is_scanner_enabled("sheets_scanner"):
-        sheets_service = load_credentials(SHEETSINFO_TOKEN, log_file=SHEETSINFO_LOG)
         threading.Thread(
             target=start_sheets_scanner,
-            args=(conn, sheets_service, doc_id_map),
+            args=(conn, sheet_tokens, doc_id_map),
             daemon=True
         ).start()
 

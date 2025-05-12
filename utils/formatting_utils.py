@@ -1,15 +1,15 @@
 # utils/formatting_utils.py
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+import socket
+from database.database import insert_usage
 from utils.logger import log_to_file
+from tabulate import tabulate
 
-def hex_to_rgb(hex_color):
-    hex_color = hex_color.lstrip("#")
-    return {
-        "red": int(hex_color[0:2], 16) / 255,
-        "green": int(hex_color[2:4], 16) / 255,
-        "blue": int(hex_color[4:6], 16) / 255,
-    }
+from core.config import TIMEZONE
 
+# 🎨 Цветовая карта по ключевым словам
 COLOR_MAP = {
     "SC": {"fg": "#000000", "bg": "#00ffff"},
     "TC": {"fg": "#000000", "bg": "#8179c7"},
@@ -68,32 +68,81 @@ COLOR_MAP = {
     "TritonRL": {"fg": "#bfe0f6", "bg": "#0a53a8"},
 }
 
-def build_formatting_requests(values, sheet_id, start_row=0, start_col=3):
-    log_to_file("logs/scanner_rotationsinfo.log", f"🖌️ Форматирую {len(values)} строк и {len(values[0])} колонок")
-    for row in values:
-        log_to_file("logs/scanner_rotationsinfo.log", f"🖌️ {row}")
-    requests = []
-    for r_idx, row in enumerate(values):
-        for c_idx, cell in enumerate(row):
-            text = str(cell).strip()
-            matched = False
+# 🔄 Преобразование HEX в RGB для Google Sheets API (0.0–1.0)
+def hex_to_rgb(hex_color):
+    hex_color = hex_color.lstrip("#")
+    return {
+        "red": round(int(hex_color[0:2], 16) / 255.0, 3),
+        "green": round(int(hex_color[2:4], 16) / 255.0, 3),
+        "blue": round(int(hex_color[4:6], 16) / 255.0, 3),
+    }
 
-            if "x->" in text:
-                fg = hex_to_rgb("#000000")
-                bg = hex_to_rgb("#00ff00")
-                matched = True
-            elif "SH" in text:
-                fg = hex_to_rgb("#ffffff")
-                bg = hex_to_rgb("#000000")
-                matched = True
-            elif text in COLOR_MAP:
-                colors = COLOR_MAP[text]
-                fg = hex_to_rgb(colors["fg"])
-                bg = hex_to_rgb(colors["bg"])
-                matched = True
-            else:
-                fg = hex_to_rgb("#000000")
-                bg = hex_to_rgb("#ffffff")
+# 🧠 Определение цвета по содержимому ячейки с кэшированием
+def resolve_colors(text, color_cache):
+    text = str(text).strip()
+    if text in color_cache:
+        return color_cache[text]
+
+    # Стандартные цвета по умолчанию
+    fg, bg = hex_to_rgb("#000000"), hex_to_rgb("#ffffff")
+
+    if "x" in text:
+        fg, bg = hex_to_rgb("#000000"), hex_to_rgb("#00ff00")
+    elif "SH" in text:
+        fg, bg = hex_to_rgb("#ffffff"), hex_to_rgb("#000000")
+    elif text in COLOR_MAP:
+        colors = COLOR_MAP.get(text, {})
+        fg = hex_to_rgb(colors.get("fg", "#000000"))
+        bg = hex_to_rgb(colors.get("bg", "#ffffff"))
+
+    color_cache[text] = (fg, bg)
+    return fg, bg
+
+# 🏗️ Генерация форматирующих repeatCell-запросов
+def build_formatting_requests(values, sheet_id, start_row=0, start_col=3, log_file="logs/scanner_rotationsinfo.log"):
+    # log_to_file(log_file, f"🖌️ Форматирование: {len(values)} строк × {len(values[0]) if values else 0} колонок")
+    
+    requests = []
+
+    # 1️⃣ Общая заливка — D1:AC100
+    default_fg = hex_to_rgb("#000000")
+    default_bg = hex_to_rgb("#ffffff")
+
+    total_rows = len(values)
+    total_cols = len(values[0]) if values else 0
+
+    # D = 3, AC = 29 (0-indexed, т.е. D1:AC100)
+    requests.append({
+        "repeatCell": {
+            "range": {
+                "sheetId": sheet_id,
+                "startRowIndex": start_row,
+                "endRowIndex": start_row + total_rows,
+                "startColumnIndex": start_col,
+                "endColumnIndex": start_col + total_cols,
+            },
+            "cell": {
+                "userEnteredFormat": {
+                    "backgroundColor": default_bg,
+                    "textFormat": {
+                        "foregroundColor": default_fg
+                    }
+                }
+            },
+            "fields": "userEnteredFormat(backgroundColor,textFormat.foregroundColor)"
+        }
+    })
+
+
+    color_cache = {}
+
+    # 2️⃣ Заливка значений, начиная с E1 (то есть пропускаем первую колонку)
+    for r_idx, row in enumerate(values):
+        for c_idx, cell in enumerate(row[1:], start=1):  # Пропускаем первый столбец
+            fg, bg = resolve_colors(cell, color_cache)
+
+            if fg == default_fg and bg == default_bg:
+                continue
 
             requests.append({
                 "repeatCell": {
@@ -115,4 +164,86 @@ def build_formatting_requests(values, sheet_id, start_row=0, start_col=3):
                     "fields": "userEnteredFormat(backgroundColor,textFormat.foregroundColor)"
                 }
             })
+
+    # log_to_file(log_file, f"✅ Сформировано {len(requests)} форматирующих запросов.")
     return requests
+
+# 🚀 Полный цикл применения форматирования по значениям
+def format_sheet(
+    service,
+    spreadsheet_id,
+    sheet_title,
+    values,
+    token_name,
+    update_group,
+    log_file,
+    start_row=0,
+    start_col=3,
+    chunk_size=1500
+):
+    try:
+        # log_to_file(log_file, f"🎨 Подготовка форматирования листа '{sheet_title}'...")
+
+        sheet_metadata = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+        sheet_id = next(
+            (s["properties"]["sheetId"] for s in sheet_metadata["sheets"]
+             if s["properties"]["title"] == sheet_title),
+            None
+        )
+        if sheet_id is None:
+            raise ValueError(f"❌ Лист '{sheet_title}' не найден")
+        time = datetime.now(ZoneInfo(TIMEZONE))
+        print(f"================================================📦 Дата и время: {time}================================================")
+        print(tabulate(values, headers="keys", tablefmt="grid"))
+
+        formatting_requests = build_formatting_requests(values, sheet_id, start_row, start_col, log_file)
+
+        # log_to_file(log_file, f"📦 Всего форматирующих запросов: {len(formatting_requests)}")
+        # if formatting_requests:
+        #     sample_req = json.dumps(formatting_requests[0], ensure_ascii=False, indent=2)
+        #     log_to_file(log_file, f"🔍 Пример первого запроса:\n{sample_req}")
+        # else:
+        #     log_to_file(log_file, "⚠️ Нет форматирующих запросов.")
+
+        # log_to_file(log_file, f"📦 Отправляю {len(formatting_requests)} запросов на форматирование...")
+        success = True
+
+        for i in range(0, len(formatting_requests), chunk_size):
+            chunk = formatting_requests[i:i + chunk_size]
+            for attempt in range(3):  # максимум 3 попытки
+                try:
+                    service.spreadsheets().batchUpdate(
+                        spreadsheetId=spreadsheet_id,
+                        body={"requests": chunk}
+                    ).execute()
+                    # log_to_file(log_file, f"✅ Отправлена порция форматирования {i}–{i + len(chunk)}.")
+                    break
+                except (socket.timeout, Exception) as e:
+                    log_to_file(log_file, f"❌ Попытка {attempt + 1} — ошибка в порции {i}–{i + len(chunk)}: {e}")
+                    if attempt < 2:
+                        time.sleep(5)
+                    else:
+                        success = False
+
+
+        insert_usage(
+            token=token_name,
+            count=1,
+            scan_group=update_group,
+            success=success
+        )
+
+        # if success:
+        #     log_to_file(log_file, f"✅ Форматирование листа '{sheet_title}' завершено успешно.")
+        # else:
+        #     log_to_file(log_file, f"⚠️ Форматирование листа '{sheet_title}' завершено с ошибками.")
+
+    except Exception as e:
+        log_to_file(log_file, f"❌ Ошибка в format_sheet(): {e}")
+        insert_usage(
+            token=token_name,
+            count=1,
+            scan_group=update_group,
+            success=False
+        )
+        raise
