@@ -27,8 +27,12 @@ Thumbs.db
 Tokens/
 __pycache__/
 venv/
+versions/
 
 # Ignore all file with the following extensions
 *.csv
 *.json
 *.db
+
+alembic.ini
+script.py.mako

@@ -3,7 +3,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import socket
-from database.database import insert_usage
+from utils.db_orm import insert_usage
 from utils.logger import log_to_file
 from tabulate import tabulate
 
@@ -177,6 +177,7 @@ def format_sheet(
     token_name,
     update_group,
     log_file,
+    session,
     start_row=0,
     start_col=3,
     chunk_size=1500
@@ -193,19 +194,10 @@ def format_sheet(
         if sheet_id is None:
             raise ValueError(f"❌ Лист '{sheet_title}' не найден")
         time = datetime.now(ZoneInfo(TIMEZONE))
-        print(f"================================================📦 Дата и время: {time}================================================")
+        print(f"\n\n\n================================================📦 Дата и время: {time}================================================\n\n\n")
         print(tabulate(values, headers="keys", tablefmt="grid"))
 
         formatting_requests = build_formatting_requests(values, sheet_id, start_row, start_col, log_file)
-
-        # log_to_file(log_file, f"📦 Всего форматирующих запросов: {len(formatting_requests)}")
-        # if formatting_requests:
-        #     sample_req = json.dumps(formatting_requests[0], ensure_ascii=False, indent=2)
-        #     log_to_file(log_file, f"🔍 Пример первого запроса:\n{sample_req}")
-        # else:
-        #     log_to_file(log_file, "⚠️ Нет форматирующих запросов.")
-
-        # log_to_file(log_file, f"📦 Отправляю {len(formatting_requests)} запросов на форматирование...")
         success = True
 
         for i in range(0, len(formatting_requests), chunk_size):

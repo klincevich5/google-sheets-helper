@@ -1,6 +1,7 @@
 # core/config.py
 
 import os
+import json
 from dotenv import load_dotenv
 
 # Загружаем .env до вызова os.getenv()ующих переменных окружения
@@ -17,9 +18,6 @@ MAIN_LOG = os.getenv("MAIN_LOG", "logs/scanner.log")
 ROTATIONSINFO_LOG = os.getenv("ROTATIONSINFO_LOG", "logs/scanner_rotationsinfo.log")
 SHEETSINFO_LOG = os.getenv("SHEETSINFO_LOG", "logs/scanner_sheetsinfo.log")
 
-# --- БД ---
-DB_PATH = os.getenv("DB_PATH", "database/scheduler.db")
-
 # --- Параметры Google API ---
 SHEETSINFO_TOKEN = os.getenv("SHEETSINFO_TOKEN", "tokens/current/SheetsInfo_scanner_1_token.json")
 ROTATIONSINFO_TOKEN_1 = os.getenv("ROTATIONSINFO_TOKEN_1", "tokens/current/RotationsInfo_scanner_1_token.json")
@@ -32,3 +30,11 @@ THRESHOLD = int(os.getenv("THRESHOLD", 9000))
 TIMEZONE = os.getenv("TIMEZONE", "Europe/Warsaw")
 SHEETINFO_INTERVAL = int(os.getenv("SHEETINFO_INTERVAL", 300))
 ROTATIONSINFO_INTERVAL = int(os.getenv("ROTATIONSINFO_INTERVAL", 60))
+
+# --- sqalchemy ---
+SQLALCHEMY_DATABASE_URL = os.getenv("SQLALCHEMY_DATABASE_URL", "postgresql+psycopg://postgres:qweqwe@localhost/scheduler")
+
+# --- Deviding by floors ---
+FLOORS = json.loads(os.getenv("FLOORS", "{}"))
+
+ROTATION_ORDER = os.getenv("ROTATION_ORDER", ["SHUFFLE Main", "VIP Main", "TURKISH Main", "GENERIC Main","GSBJ Main", "LEGENDZ Main", "TRI-STAR Main", "TritonRL Main"])

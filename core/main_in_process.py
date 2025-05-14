@@ -12,7 +12,7 @@ import logging
 # from aiogram.enums import ParseMode
 # from aiogram.fsm.storage.memory import MemoryStorage
 
-from bot.settings_access import is_scanner_enabled
+# from bot.settings_access import is_scanner_enabled
 # from bot.handlers import menu
 
 from utils.logger import log_to_file
@@ -25,7 +25,7 @@ from core.config import (
 )
 from database.session import SessionLocal
 from core.data import return_tracked_tables
-from scanners.rotationsinfo_scanner import RotationsInfoScanner
+# from scanners.rotationsinfo_scanner import RotationsInfoScanner
 from scanners.sheetsinfo_scanner import SheetsInfoScanner
 
 # Токены сканеров
@@ -42,15 +42,15 @@ sheet_tokens = {
 stop_event = threading.Event()
 scanner_thread = None  # глобальная переменная для доступа в сигнале
 
-def start_rotations_scanner(rotation_tokens, doc_id_map):
-    while not stop_event.is_set():
-        try:
-            session = SessionLocal()
-            scanner = RotationsInfoScanner(session, rotation_tokens, doc_id_map)
-            scanner.run()
-        except Exception as e:
-            log_to_file(MAIN_LOG, f"❌ Ошибка в потоке RotationsInfoScanner: {e}")
-            time.sleep(5)
+# def start_rotations_scanner(rotation_tokens, doc_id_map):
+#     while not stop_event.is_set():
+#         try:
+#             session = SessionLocal()
+#             scanner = RotationsInfoScanner(session, rotation_tokens, doc_id_map)
+#             scanner.run()
+#         except Exception as e:
+#             log_to_file(MAIN_LOG, f"❌ Ошибка в потоке RotationsInfoScanner: {e}")
+#             time.sleep(5)
 
 def start_sheets_scanner(sheet_tokens, doc_id_map):
     while not stop_event.is_set():
@@ -82,11 +82,11 @@ async def main():
     session = SessionLocal()
     doc_id_map = return_tracked_tables(session)
 
-    threading.Thread(
-            target=start_rotations_scanner,
-            args=(rotation_tokens, doc_id_map),
-            daemon=True
-        ).start()
+    # threading.Thread(
+    #         target=start_rotations_scanner,
+    #         args=(rotation_tokens, doc_id_map),
+    #         daemon=True
+    #     ).start()
     
     scanner_thread = threading.Thread(
         target=start_sheets_scanner,
@@ -100,20 +100,20 @@ async def main():
 
     scanner_thread.join()
 
-    # Запуск сканеров в отдельных потоках
-    if is_scanner_enabled("rotations_scanner"):
-        threading.Thread(
-            target=start_rotations_scanner,
-            args=(rotation_tokens, doc_id_map),
-            daemon=True
-        ).start()
+    # # Запуск сканеров в отдельных потоках
+    # if is_scanner_enabled("rotations_scanner"):
+    #     threading.Thread(
+    #         target=start_rotations_scanner,
+    #         args=(rotation_tokens, doc_id_map),
+    #         daemon=True
+    #     ).start()
     
-    if is_scanner_enabled("sheets_scanner"):
-        threading.Thread(
-            target=start_sheets_scanner,
-            args=(sheet_tokens, doc_id_map),
-            daemon=True
-        ).start()
+    # if is_scanner_enabled("sheets_scanner"):
+    #     threading.Thread(
+    #         target=start_sheets_scanner,
+    #         args=(sheet_tokens, doc_id_map),
+    #         daemon=True
+    #     ).start()
 
     # Запуск Telegram-бота
     # bot = Bot(

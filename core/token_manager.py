@@ -1,9 +1,12 @@
-# core/token_manager.py
+# core.token_manager.py
 
-import sqlite3
-from datetime import date
-from core.config import DB_PATH, THRESHOLD
+from datetime import date, datetime, timedelta
+from sqlalchemy.orm import Session
+from core.config import THRESHOLD
+from database.session import SessionLocal
+from database.db_models import ApiUsage
 from utils.logger import log_to_file
+
 
 class TokenManager:
     def __init__(self, token_map):
@@ -12,23 +15,32 @@ class TokenManager:
         """
         self.token_map = token_map
 
-    def get_usage(self, token_name):
-        today = date.today().isoformat()
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT SUM(counter) FROM ApiUsage
-            WHERE token = ? AND date LIKE ?
-        """, (token_name, f"{today}%"))
-        result = cursor.fetchone()
-        conn.close()
-        return result[0] or 0
+    def get_usage(self, session: Session, token_name: str) -> int:
+        today = date.today()
+        tomorrow = today + timedelta(days=1)
 
-    def select_best_token(self, log_file):
-        # Находит токен с минимальной нагрузкой из допустимых
-        usage_data = {
-            name: self.get_usage(name) for name in self.token_map.keys()
-        }
+        results = (
+            session.query(ApiUsage)
+            .filter(ApiUsage.token == token_name)
+            .filter(ApiUsage.date >= datetime.combine(today, datetime.min.time()))
+            .filter(ApiUsage.date < datetime.combine(tomorrow, datetime.min.time()))
+            .with_entities(ApiUsage.counter)
+            .all()
+        )
+
+        # Если записей нет — вернём 0
+        if not results:
+            return 0
+
+        return sum(r[0] for r in results if r[0])
+
+
+    def select_best_token(self, log_file: str) -> tuple[str, str]:
+        with SessionLocal() as session:
+            usage_data = {
+                name: self.get_usage(session, name)
+                for name in self.token_map.keys()
+            }
 
         for name, used in usage_data.items():
             log_to_file(log_file, f"🔍 {name} использован: {used}/10000")
@@ -40,6 +52,5 @@ class TokenManager:
         if not available:
             raise RuntimeError("❌ Нет доступных токенов ниже лимита.")
 
-        # Возвращает имя и путь к токену
         best = min(available.items(), key=lambda x: x[1])[0]
         return best, self.token_map[best]

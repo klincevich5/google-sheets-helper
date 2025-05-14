@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from core.methods import PROCESSORS
 from core.config import TIMEZONE
 
+
 class Task:
     def __init__(self, data):
         self.id = data.get("id")
