@@ -27,7 +27,7 @@ Thumbs.db
 Tokens/
 __pycache__/
 venv/
-versions/
+alembic/versions/
 
 # Ignore all file with the following extensions
 *.csv
@@ -35,4 +35,4 @@ versions/
 *.db
 
 alembic.ini
-script.py.mako
+alembic/script.py.mako
