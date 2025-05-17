@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 from database.db_models import TrackedTables, RotationsInfo, SheetsInfo
-from core.models import Task
+from core.task_model import Task
 from utils.logger import log_to_file, log_section
 from core.config import TIMEZONE
 
@@ -28,7 +28,7 @@ def return_tracked_tables(session: Session) -> dict:
     for table in tables:
         if table.valid_from <= actual_date_now <= table.valid_to:
             doc_id_map[table.table_type] = table.spreadsheet_id
-
+    
     return doc_id_map
 
 def get_active_tabs(now=None):

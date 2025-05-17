@@ -1,9 +1,49 @@
 # database/db_models.py
 
-from sqlalchemy import Column, Integer, String, Text, Boolean, Date, Time, DateTime
+from sqlalchemy import Column, Integer, String, Text, Boolean, Date, Time, DateTime, UniqueConstraint
 from sqlalchemy.orm import declarative_base
+from sqlalchemy.dialects.postgresql import JSONB, ARRAY as PG_ARRAY
+
 
 Base = declarative_base()
+
+class MonitoringStorage(Base):
+    __tablename__ = "MonitoringStorage"
+
+    id = Column(Integer, primary_key=True)
+    dealer_name = Column(String, nullable=False)
+    dealer_nicknames = Column(PG_ARRAY(String), default=[])
+    report_date = Column(Date, nullable=False)
+
+    shift_type = Column(String)
+    shift_start = Column(Time)
+    shift_end = Column(Time)
+
+    break_number = Column(Integer, default=0)
+
+    is_scheduled = Column(Boolean, default=False)
+    is_additional = Column(Boolean, default=False)
+    is_extra = Column(Boolean, default=False)
+    is_sickleave = Column(Boolean, default=False)
+    is_vacation = Column(Boolean, default=False)
+    is_did_not_come = Column(Boolean, default=False)
+    is_left_the_shift = Column(Boolean, default=False)
+
+    assigned_floors = Column(PG_ARRAY(String), default=[])
+    floor_permits = Column(JSONB, default={})
+    game_permits = Column(JSONB, default={})
+
+    has_mistakes = Column(Boolean, default=False)
+    has_feedbacks = Column(Boolean, default=False)
+
+    rotation = Column(JSONB, default=[])
+    mistakes = Column(JSONB, default=[])
+    feedbacks = Column(JSONB, default=[])
+    raw_data = Column(JSONB, default={})
+
+    __table_args__ = (
+        UniqueConstraint('dealer_name', 'report_date', name='uq_dealer_date'),
+    )
 
 class ApiUsage(Base):
     __tablename__ = 'ApiUsage'
@@ -123,3 +163,15 @@ class TrackedTables(Base):
     spreadsheet_id = Column(Text)
     valid_from = Column(Date)
     valid_to = Column(Date)
+
+
+class FeedbackStatus(Base):
+    __tablename__ = 'FeedbackStatus'
+
+    id = Column(Integer, primary_key=True)
+    name_surname = Column(Text)
+    status = Column(Text)
+
+    __table_args__ = (
+        UniqueConstraint('name_surname', name='uq_name_surname'),
+    )

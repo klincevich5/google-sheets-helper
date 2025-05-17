@@ -17,6 +17,7 @@ AUTHORIZED_USERS = [
 MAIN_LOG = os.getenv("MAIN_LOG", "logs/scanner.log")
 ROTATIONSINFO_LOG = os.getenv("ROTATIONSINFO_LOG", "logs/scanner_rotationsinfo.log")
 SHEETSINFO_LOG = os.getenv("SHEETSINFO_LOG", "logs/scanner_sheetsinfo.log")
+MONITORING_LOG = os.getenv("MONITORING_LOG", "logs/scanner_monitoring.log")
 
 # --- Параметры Google API ---
 SHEETSINFO_TOKEN = os.getenv("SHEETSINFO_TOKEN", "tokens/current/SheetsInfo_scanner_1_token.json")
@@ -37,4 +38,7 @@ SQLALCHEMY_DATABASE_URL = os.getenv("SQLALCHEMY_DATABASE_URL", "postgresql+psyco
 # --- Deviding by floors ---
 FLOORS = json.loads(os.getenv("FLOORS", "{}"))
 
-ROTATION_ORDER = os.getenv("ROTATION_ORDER", ["SHUFFLE Main", "VIP Main", "TURKISH Main", "GENERIC Main","GSBJ Main", "LEGENDZ Main", "TRI-STAR Main", "TritonRL Main"])
+try:
+    ROTATION_ORDER = json.loads(os.getenv("ROTATION_ORDER"))
+except Exception:
+    ROTATION_ORDER = ["SHUFFLE Main", "VIP Main", "TURKISH Main", "GENERIC Main", "GSBJ Main", "LEGENDZ Main", "TRI-STAR Main", "TritonRL Main"]

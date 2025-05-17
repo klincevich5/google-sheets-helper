@@ -27,6 +27,7 @@ def log_to_file(log_file, message):
             except Exception as e:
                 raise ValueError(f"Некорректное значение TIMEZONE: {TIMEZONE}. Ошибка: {e}")
 
-            f.write(f"{datetime.now(timezone).strftime('%Y-%m-%d %H:%M:%S')} — {message}\n")
+            # f.write(f"{datetime.now(timezone).strftime('%Y-%m-%d %H:%M:%S')} — {message}\n")
+            f.write(f"{message}\n")
     except Exception as e:
         print(f"Ошибка записи в лог {log_file}: {e}")

@@ -219,6 +219,7 @@ def format_sheet(
 
 
         insert_usage(
+            session=session,
             token=token_name,
             count=1,
             scan_group=update_group,
@@ -233,6 +234,7 @@ def format_sheet(
     except Exception as e:
         log_to_file(log_file, f"❌ Ошибка в format_sheet(): {e}")
         insert_usage(
+            session=session,
             token=token_name,
             count=1,
             scan_group=update_group,

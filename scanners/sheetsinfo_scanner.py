@@ -10,7 +10,7 @@ from utils.logger import log_to_file, log_separator, log_section
 from utils.floor_resolver import get_floor_by_table_name
 from core.token_manager import TokenManager
 
-from database.db_models import MistakeStorage, FeedbackStorage
+from database.db_models import MistakeStorage, FeedbackStorage, FeedbackStatus
 from utils.db_orm import get_max_last_row
 
 from core.config import (
@@ -312,20 +312,20 @@ class SheetsInfoScanner:
             log_to_file(self.log_file, f"   • {task.name_of_process} ({task.update_group})")
 
         # # --- Обычные задачи ---
-        # if tasks_to_update:
-        #     try:
-        #         self.import_tasks_to_update(tasks_to_update)
-        #     except Exception as e:
-        #         log_to_file(self.log_file, f"❌ Ошибка при обновлении задач: {e}")
-        #     time.sleep(3)
+        if tasks_to_update:
+            try:
+                self.import_tasks_to_update(tasks_to_update)
+            except Exception as e:
+                log_to_file(self.log_file, f"❌ Ошибка при обновлении задач: {e}")
+            time.sleep(3)
 
-        # # --- Ошибки (MistakeStorage) ---
-        # if mistakes_to_update:
-        #     try:
-        #         self.import_mistakes_to_update(mistakes_to_update)
-        #     except Exception as e:
-        #         log_to_file(self.log_file, f"❌ Ошибка при обновлении ошибок: {e}")
-        #     time.sleep(3)
+        # --- Ошибки (MistakeStorage) ---
+        if mistakes_to_update:
+            try:
+                self.import_mistakes_to_update(mistakes_to_update)
+            except Exception as e:
+                log_to_file(self.log_file, f"❌ Ошибка при обновлении ошибок: {e}")
+            time.sleep(3)
 
         # --- Фидбеки (FeedbackStorage) ---
         if feedback_to_update:
@@ -379,6 +379,8 @@ class SheetsInfoScanner:
             if not batch_data:
                 log_to_file(self.log_file, f"⚪ Нет валидных данных для batchUpdate группы {update_group}.")
                 continue
+            for data in batch_data:
+                print(f"   • {data['range']} ({len(data['values'])} строк)")
 
             # Пакетная отправка
             success, error = batch_update(
@@ -468,7 +470,7 @@ class SheetsInfoScanner:
         try:
             for task in mistakes_to_update:
                 sheet = task.raw_values_json
-                page_name = task.source_page_nam
+                page_name = task.source_page_name
                 floor = get_floor_by_table_name(page_name, FLOORS)
                 max_row_in_db = get_max_last_row(session, page_name)
 
@@ -552,7 +554,18 @@ class SheetsInfoScanner:
                 if isinstance(row, list) and row and isinstance(row[0], str) and row[0].strip():
                     sheet_names.append(row[0].strip())
 
-            output = [[name, gp_status.get(name, "...")] for name in sheet_names]
+            # --- Сохраняем статусы в FeedbackStatus ---
+            for name in sheet_names:
+                status = gp_status.get(name, "✅")  # Теперь по умолчанию ✅
+                existing = session.query(FeedbackStatus).filter_by(name_surname=name).first()
+                if existing:
+                    existing.status = status
+                else:
+                    new_status = FeedbackStatus(name_surname=name, status=status)
+                    session.add(new_status)
+            session.commit()
+
+            output = [[name, gp_status.get(name, "✅")] for name in sheet_names]  # По умолчанию ✅
             for name in gp_status:
                 print(f"GP: {name} - {gp_status[name]}")
             log_to_file(self.log_file, f"✅ Статусы GP обновлены: {len(output)}")
@@ -567,6 +580,7 @@ class SheetsInfoScanner:
             return output
 
         except Exception as e:
+            session.rollback()
             log_to_file(self.log_file, f"❌ Ошибка при обновлении GP статусов: {e}")
             return []
 
