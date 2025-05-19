@@ -3,7 +3,7 @@
 from sqlalchemy import select
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from core.config import MONITORING_LOG
 from collections import defaultdict
 from utils.logger import (
@@ -182,8 +182,8 @@ class MonitoringStorageScanner:
                 self._save(task)
             except Exception as e:
                 log_to_file(MONITORING_LOG, f"⚠ Ошибка для {dealer_name}: {e}")
-            finally:
-                time.sleep(15)  # Задержка между обработкой дилеров
+            # finally:
+            #     time.sleep(15)  # Задержка между обработкой дилеров
     
 
     def _convert_to_task_dict(self, dealer_name, nicknames, data):
@@ -433,14 +433,10 @@ class MonitoringStorageScanner:
                 "floor": floor,
                 "schedule": build_schedule(floor, values)
             })
-        # Определяем тип смены
-        shift_type = "Day"
-        for floor in assigned_floors:
-            if floor.upper().startswith("NIGHT"):
-                shift_type = "Night"
-                break
-            if floor.upper().startswith("DAY"):
-                shift_type = "Day"
+        # Используем текущий тип смены и время, если заданы (для поддержки day/night из scan_all_shifts_for_month)
+        shift_type = getattr(self, 'current_shift_type', None) or "Day"
+        start = getattr(self, 'current_shift_start', None) or "09:00"
+        end = getattr(self, 'current_shift_end', None) or "21:00"
         extra_flags = {
             "is_scheduled": True,
             "is_additional": False,
@@ -522,3 +518,37 @@ class MonitoringStorageScanner:
             self.session.add(entry)
 
         self.session.commit()
+
+    def scan_all_shifts_for_month(self):
+        """
+        Пробегает по всем датам месяца до сегодняшней (включая Night shift текущего дня)
+        и вызывает self.run() для каждой даты и смены.
+        """
+        today = self.date
+        first_day = today.replace(day=1)
+        last_day = today
+        shift_types = [
+            ("Day", "09:00", "21:00"),
+            ("Night", "21:00", "09:00")
+        ]
+        current = first_day
+        while current <= last_day:
+            for shift_type, shift_start, shift_end in shift_types:
+                self.date = current
+                self.current_shift_type = shift_type
+                self.current_shift_start = shift_start
+                self.current_shift_end = shift_end
+                log_to_file(MONITORING_LOG, f"\n=== {current} {shift_type} shift ===")
+                self.run()
+            current += timedelta(days=1)
+
+if __name__ == "__main__":
+    # Пример инициализации (замените на свою реальную инициализацию)
+    from database.session import SessionLocal
+    session = SessionLocal()
+    monitoring_tokens = None  # или подставьте реальные токены
+    doc_id_map = None        # или подставьте реальную карту id
+    scanner = MonitoringStorageScanner(session, monitoring_tokens, doc_id_map)
+
+    scanner.scan_all_shifts_for_month()
+    print(f"Сканирование завершено: все смены с {scanner.date.replace(day=1)} по {scanner.date} (дата и shift для каждой записи сохранены в БД)")

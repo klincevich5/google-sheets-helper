@@ -86,17 +86,17 @@ async def main():
     session = SessionLocal()
     doc_id_map = return_tracked_tables(session)
 
-    # if is_scanner_enabled("rotations_scanner"):
-    #     t = threading.Thread(target=start_rotations_scanner, args=(rotation_tokens, doc_id_map), daemon=True)
-    #     t.start()
-    #     scanner_threads.append(t)
-
-    # if is_scanner_enabled("sheets_scanner"):
-    #     t = threading.Thread(target=start_sheets_scanner, args=(sheet_tokens, doc_id_map), daemon=True)
-    #     t.start()
-    #     scanner_threads.append(t)
-
     if is_scanner_enabled("rotations_scanner"):
+        t = threading.Thread(target=start_rotations_scanner, args=(rotation_tokens, doc_id_map), daemon=True)
+        t.start()
+        scanner_threads.append(t)
+
+    if is_scanner_enabled("sheets_scanner"):
+        t = threading.Thread(target=start_sheets_scanner, args=(sheet_tokens, doc_id_map), daemon=True)
+        t.start()
+        scanner_threads.append(t)
+
+    if is_scanner_enabled("monitoring_scanner"):
         print("🔄 Запуск MopnitoringScanner...")
         t = threading.Thread(target=start_monitoring_scanner, args=(monitoring_tokens, doc_id_map), daemon=True)
         t.start()

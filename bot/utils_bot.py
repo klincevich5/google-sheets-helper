@@ -4,7 +4,6 @@ import os
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
-from sqlalchemy import select
 
 from core.config import MAIN_LOG, TIMEZONE
 from database.db_models import TrackedTables, RotationsInfo, SheetsInfo
