@@ -178,7 +178,7 @@ class MonitoringStorageScanner:
                 t1 = _time.time()
                 log_to_file(MONITORING_LOG, f"\n🌀 Получены данные для {dealer_name} (поиск занял {t1-t0:.3f} сек):")
                 task = MonitoringStorageTask(self._convert_to_task_dict(dealer_name, nicknames, data))
-                pretty_print_dealer_info(task.__dict__)
+                # pretty_print_dealer_info(task.__dict__)
                 self._save(task)
             except Exception as e:
                 log_to_file(MONITORING_LOG, f"⚠ Ошибка для {dealer_name}: {e}")

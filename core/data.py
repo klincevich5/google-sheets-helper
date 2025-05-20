@@ -148,7 +148,7 @@ def load_sheetsinfo_tasks(session: Session, log_file):
 
         next_scan_dt = last_scan + timedelta(seconds=row.scan_interval)
         minutes_left = int((next_scan_dt - now).total_seconds() // 60)
-        status = "READY" if now >= next_scan_dt else "WAITING"
+        status = "✅READY" if now >= next_scan_dt else "❌WAITING"
 
         log_to_file(
             log_file,

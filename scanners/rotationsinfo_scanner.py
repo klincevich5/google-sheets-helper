@@ -225,18 +225,18 @@ class RotationsInfoScanner:
                     task.raw_values_json = matched_values
                     task.update_after_scan(success=True)
                     update_task_scan_fields(self.session, task, self.log_file, table_name="RotationsInfo")
-                    log_to_file(self.log_file, f"✅ [Task {task.name_of_process}] Найден диапазон {sheet_name}!{cells_range}, строк: {len(matched_values)}")
+                    # log_to_file(self.log_file, f"✅ [Task {task.name_of_process}] Найден диапазон {sheet_name}!{cells_range}, строк: {len(matched_values)}")
                 else:
                     task.update_after_scan(success=False)
                     update_task_scan_fields(self.session, task, self.log_file, table_name="RotationsInfo")
-                    log_to_file(self.log_file, f"⚠️ [Task {task.name_of_process}] Диапазон {expected_sheet}!{task.source_page_area} не найден или пуст.")
+                    # log_to_file(self.log_file, f"⚠️ [Task {task.name_of_process}] Диапазон {expected_sheet}!{task.source_page_area} не найден или пуст.")
 
-        for task in self.tasks:
-            log_to_file(
-                self.log_file,
-                f"⚪ [Task {task.name_of_process}] Отсканировано: {task.scanned} | "
-                f"Обработано: {task.proceed} | Изменено: {task.changed} | Загружено: {task.uploaded}"
-            )
+        # for task in self.tasks:
+        #     log_to_file(
+        #         self.log_file,
+        #         f"⚪ [Task {task.name_of_process}] Отсканировано: {task.scanned} | "
+        #         f"Обработано: {task.proceed} | Изменено: {task.changed} | Загружено: {task.uploaded}"
+        #     )
 
 #############################################################################################
 # Фаза обработки
@@ -279,12 +279,12 @@ class RotationsInfoScanner:
                 log_to_file(self.log_file, f"❌ [Task {task.name_of_process}] Неизвестная ошибка при обработке: {e}")
 
         # Итоговый отчёт
-        for task in self.tasks:
-            log_to_file(
-                self.log_file,
-                f"⚪ [Task {task.name_of_process}] Отсканировано: {task.scanned} | "
-                f"Обработано: {task.proceed} | Изменено: {task.changed} | Загружено: {task.uploaded}"
-            )
+        # for task in self.tasks:
+        #     log_to_file(
+        #         self.log_file,
+        #         f"⚪ [Task {task.name_of_process}] Отсканировано: {task.scanned} | "
+        #         f"Обработано: {task.proceed} | Изменено: {task.changed} | Загружено: {task.uploaded}"
+        #     )
 
 #############################################################################################
 # Фаза обновления
@@ -322,13 +322,13 @@ class RotationsInfoScanner:
                 log_to_file(self.log_file, f"❌ Ошибка при обновлении update_shuffle: {e}")
 
         # Логируем результат для каждой задачи
-        for task in self.tasks:
-            log_to_file(
-                self.log_file,
-                f"⚪ [Task {task.name_of_process} {task.source_page_name}] "
-                f"Отсканировано: {task.scanned} | Обработано: {task.proceed} | "
-                f"Изменено: {task.changed} | Загружено: {task.uploaded}"
-            )
+        # for task in self.tasks:
+        #     log_to_file(
+        #         self.log_file,
+        #         f"⚪ [Task {task.name_of_process} {task.source_page_name}] "
+        #         f"Отсканировано: {task.scanned} | Обработано: {task.proceed} | "
+        #         f"Изменено: {task.changed} | Загружено: {task.uploaded}"
+        #     )
 
         # Финальное сообщение
         if not main_tasks and not shuffle_tasks:
@@ -364,7 +364,7 @@ class RotationsInfoScanner:
 
                             values = task.values_json
                             if not values or not isinstance(values, list):
-                                log_to_file(self.log_file, f"⚪ [Task {name} {getattr(task, 'source_page_name', '?')}] нет корректных данных. Пропуск.")
+                                # log_to_file(self.log_file, f"⚪ [Task {name} {getattr(task, 'source_page_name', '?')}] нет корректных данных. Пропуск.")
                                 task.update_after_upload(False)
                                 update_task_update_fields(
                                     session=self.session,
@@ -376,7 +376,7 @@ class RotationsInfoScanner:
 
                             flat = [str(cell).strip().upper() for row in values for cell in row if cell is not None]
                             if flat == ["NULL"]:
-                                log_to_file(self.log_file, f"⚪ [Task {name} {task.source_page_name}] содержит 'NULL'. Пропуск.")
+                                # log_to_file(self.log_file, f"⚪ [Task {name} {task.source_page_name}] содержит 'NULL'. Пропуск.")
                                 task.update_after_upload(False)
                                 update_task_update_fields(
                                     session=self.session,

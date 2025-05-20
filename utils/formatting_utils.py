@@ -66,6 +66,7 @@ COLOR_MAP = {
     "TP": {"fg": "#ffcfc9", "bg": "#b10202"},
     "DTL": {"fg": "#e5cff2", "bg": "#5a3286"},
     "TritonRL": {"fg": "#bfe0f6", "bg": "#0a53a8"},
+    "Shuffle": {"fg": "#000000", "bg": "#8e7cc3"},
 }
 
 # 🔄 Преобразование HEX в RGB для Google Sheets API (0.0–1.0)
@@ -88,7 +89,7 @@ def resolve_colors(text, color_cache):
 
     if "x" in text:
         fg, bg = hex_to_rgb("#000000"), hex_to_rgb("#00ff00")
-    elif "SH" in text:
+    elif "SH" in text and text != "TURKISH":
         fg, bg = hex_to_rgb("#ffffff"), hex_to_rgb("#000000")
     elif text in COLOR_MAP:
         colors = COLOR_MAP.get(text, {})
@@ -112,6 +113,7 @@ def build_formatting_requests(values, sheet_id, start_row=0, start_col=3, log_fi
     total_cols = len(values[0]) if values else 0
 
     # D = 3, AC = 29 (0-indexed, т.е. D1:AC100)
+    # Теперь правая граница - AD (30)
     requests.append({
         "repeatCell": {
             "range": {
@@ -119,7 +121,7 @@ def build_formatting_requests(values, sheet_id, start_row=0, start_col=3, log_fi
                 "startRowIndex": start_row,
                 "endRowIndex": start_row + total_rows,
                 "startColumnIndex": start_col,
-                "endColumnIndex": start_col + total_cols,
+                "endColumnIndex": start_col + total_cols + 1,  # +1 для AD
             },
             "cell": {
                 "userEnteredFormat": {
@@ -133,7 +135,242 @@ def build_formatting_requests(values, sheet_id, start_row=0, start_col=3, log_fi
         }
     })
 
-
+    # 1.5️⃣ Прямоугольники по меткам
+    # Метки и их пары
+    marker_pairs = [
+        ("VIP", "Replacements VIP"),
+        ("TURKISH", "Replacements TURKISH"),
+        ("GENERIC", "Replacements GENERIC"),
+        ("GSBJ", "Replacements GSBJ"),
+        ("LEGENDZ", "Replacements LEGENDZ"),
+        ("Tri-Star", "Replacements Tri-Star"),
+        ("TritonRL", "Replacements TritonRL"),
+        ("Shuffle", "Replacements Shuffle"),
+    ]
+    marker_colors = {
+        "VIP": COLOR_MAP["VIP"],
+        "TURKISH": COLOR_MAP["TURKISH"],
+        "GENERIC": COLOR_MAP["GENERIC"],
+        "GSBJ": COLOR_MAP["GSBJ"],
+        "LEGENDZ": COLOR_MAP["LEGENDZ"],
+        "Tri-Star": COLOR_MAP["TRISTAR"],
+        "TritonRL": COLOR_MAP["TRITONRL"],
+        "Shuffle": COLOR_MAP["Shuffle"],
+    }
+    # Поиск всех позиций меток
+    marker_positions = {}
+    for idx, row in enumerate(values):
+        cell = str(row[0]).strip() if row else ""
+        for marker, _ in marker_pairs:
+            if cell == marker:
+                marker_positions.setdefault(marker, []).append(idx)
+        for _, repl in marker_pairs:
+            if cell == repl:
+                marker_positions.setdefault(repl, []).append(idx)
+    # Для каждой пары строим прямоугольник
+    for marker, repl in marker_pairs:
+        if marker == "TritonRL":
+            # Особая логика для TritonRL
+            if marker in marker_positions:
+                for m_idx in marker_positions[marker]:
+                    # Сначала ищем Replacements TritonRL ниже
+                    r_idx = None
+                    if repl in marker_positions:
+                        r_idx = next((i for i in marker_positions[repl] if i > m_idx), None)
+                    if r_idx is None:
+                        # Только если не нашли Replacements TritonRL, ищем ближайшую пустую ячейку в D ниже TritonRL
+                        for i in range(m_idx + 1, 100):
+                            if i >= len(values):
+                                break
+                            cell_val = str(values[i][0]).strip() if values[i] else ""
+                            if cell_val == "":
+                                r_idx = i
+                                break
+                        # Если не нашли пустую, или TritonRL слишком низко, то до конца
+                        if r_idx is None or m_idx >= 97:
+                            r_idx = 99  # 0-based, 100 строк
+                    color = marker_colors.get(marker)
+                    if not color:
+                        continue
+                    try:
+                        fg = hex_to_rgb(color["fg"])
+                        bg = hex_to_rgb(color["bg"])
+                        # Верхняя грань (две линии)
+                        for row_offset in [0, 1]:
+                            requests.append({
+                                "repeatCell": {
+                                    "range": {
+                                        "sheetId": sheet_id,
+                                        "startRowIndex": start_row + m_idx + row_offset,
+                                        "endRowIndex": start_row + m_idx + row_offset + 1,
+                                        "startColumnIndex": start_col,
+                                        "endColumnIndex": start_col + total_cols + 1,  # +1 для AD
+                                    },
+                                    "cell": {
+                                        "userEnteredFormat": {
+                                            "backgroundColor": bg,
+                                            "textFormat": {"foregroundColor": fg}
+                                        }
+                                    },
+                                    "fields": "userEnteredFormat(backgroundColor,textFormat.foregroundColor)"
+                                }
+                            })
+                        # Нижняя грань (одна линия)
+                        requests.append({
+                            "repeatCell": {
+                                "range": {
+                                    "sheetId": sheet_id,
+                                    "startRowIndex": start_row + r_idx,
+                                    "endRowIndex": start_row + r_idx + 1,
+                                    "startColumnIndex": start_col,
+                                    "endColumnIndex": start_col + total_cols + 1,  # +1 для AD
+                                },
+                                "cell": {
+                                    "userEnteredFormat": {
+                                        "backgroundColor": bg,
+                                        "textFormat": {"foregroundColor": fg}
+                                    }
+                                },
+                                "fields": "userEnteredFormat(backgroundColor,textFormat.foregroundColor)"
+                            }
+                        })
+                        # Вертикальные грани (если есть пространство)
+                        if r_idx - m_idx > 2:
+                            for row in range(m_idx + 2, r_idx):
+                                # Левая грань (D)
+                                requests.append({
+                                    "repeatCell": {
+                                        "range": {
+                                            "sheetId": sheet_id,
+                                            "startRowIndex": start_row + row,
+                                            "endRowIndex": start_row + row + 1,
+                                            "startColumnIndex": start_col,
+                                            "endColumnIndex": start_col + 1,
+                                        },
+                                        "cell": {
+                                            "userEnteredFormat": {
+                                                "backgroundColor": bg,
+                                                "textFormat": {"foregroundColor": fg}
+                                            }
+                                        },
+                                        "fields": "userEnteredFormat(backgroundColor,textFormat.foregroundColor)"
+                                    }
+                                })
+                                # Правая грань (AD)
+                                requests.append({
+                                    "repeatCell": {
+                                        "range": {
+                                            "sheetId": sheet_id,
+                                            "startRowIndex": start_row + row,
+                                            "endRowIndex": start_row + row + 1,
+                                            "startColumnIndex": start_col + total_cols,  # AD
+                                            "endColumnIndex": start_col + total_cols + 1,
+                                        },
+                                        "cell": {
+                                            "userEnteredFormat": {
+                                                "backgroundColor": bg,
+                                                "textFormat": {"foregroundColor": fg}
+                                            }
+                                        },
+                                        "fields": "userEnteredFormat(backgroundColor,textFormat.foregroundColor)"
+                                    }
+                                })
+                    except Exception:
+                        continue
+        else:
+            if marker in marker_positions and repl in marker_positions:
+                for m_idx in marker_positions[marker]:
+                    r_idx = next((i for i in marker_positions[repl] if i > m_idx), None)
+                    if r_idx is None:
+                        continue
+                    color = marker_colors.get(marker)
+                    if not color:
+                        continue
+                    try:
+                        fg = hex_to_rgb(color["fg"])
+                        bg = hex_to_rgb(color["bg"])
+                        # Верхняя грань (две линии)
+                        for row_offset in [0, 1]:
+                            requests.append({
+                                "repeatCell": {
+                                    "range": {
+                                        "sheetId": sheet_id,
+                                        "startRowIndex": start_row + m_idx + row_offset,
+                                        "endRowIndex": start_row + m_idx + row_offset + 1,
+                                        "startColumnIndex": start_col,
+                                        "endColumnIndex": start_col + total_cols + 1,  # +1 для AD
+                                    },
+                                    "cell": {
+                                        "userEnteredFormat": {
+                                            "backgroundColor": bg,
+                                            "textFormat": {"foregroundColor": fg}
+                                        }
+                                    },
+                                    "fields": "userEnteredFormat(backgroundColor,textFormat.foregroundColor)"
+                                }
+                            })
+                        # Нижняя грань (одна линия)
+                        requests.append({
+                            "repeatCell": {
+                                "range": {
+                                    "sheetId": sheet_id,
+                                    "startRowIndex": start_row + r_idx,
+                                    "endRowIndex": start_row + r_idx + 1,
+                                    "startColumnIndex": start_col,
+                                    "endColumnIndex": start_col + total_cols + 1,  # +1 для AD
+                                },
+                                "cell": {
+                                    "userEnteredFormat": {
+                                        "backgroundColor": bg,
+                                        "textFormat": {"foregroundColor": fg}
+                                    }
+                                },
+                                "fields": "userEnteredFormat(backgroundColor,textFormat.foregroundColor)"
+                            }
+                        })
+                        # Вертикальные грани (если есть пространство)
+                        if r_idx - m_idx > 2:
+                            for row in range(m_idx + 2, r_idx):
+                                # Левая грань (D)
+                                requests.append({
+                                    "repeatCell": {
+                                        "range": {
+                                            "sheetId": sheet_id,
+                                            "startRowIndex": start_row + row,
+                                            "endRowIndex": start_row + row + 1,
+                                            "startColumnIndex": start_col,
+                                            "endColumnIndex": start_col + 1,
+                                        },
+                                        "cell": {
+                                            "userEnteredFormat": {
+                                                "backgroundColor": bg,
+                                                "textFormat": {"foregroundColor": fg}
+                                            }
+                                        },
+                                        "fields": "userEnteredFormat(backgroundColor,textFormat.foregroundColor)"
+                                    }
+                                })
+                                # Правая грань (AD)
+                                requests.append({
+                                    "repeatCell": {
+                                        "range": {
+                                            "sheetId": sheet_id,
+                                            "startRowIndex": start_row + row,
+                                            "endRowIndex": start_row + row + 1,
+                                            "startColumnIndex": start_col + total_cols,  # AD
+                                            "endColumnIndex": start_col + total_cols + 1,
+                                        },
+                                        "cell": {
+                                            "userEnteredFormat": {
+                                                "backgroundColor": bg,
+                                                "textFormat": {"foregroundColor": fg}
+                                            }
+                                        },
+                                        "fields": "userEnteredFormat(backgroundColor,textFormat.foregroundColor)"
+                                    }
+                                })
+                    except Exception:
+                        continue
     color_cache = {}
 
     # 2️⃣ Заливка значений, начиная с E1 (то есть пропускаем первую колонку)
@@ -194,8 +431,8 @@ def format_sheet(
         if sheet_id is None:
             raise ValueError(f"❌ Лист '{sheet_title}' не найден")
         time = datetime.now(ZoneInfo(TIMEZONE))
-        print(f"\n\n\n================================================📦 Дата и время: {time}================================================\n\n\n")
-        print(tabulate(values, headers="keys", tablefmt="grid"))
+        # print(f"\n\n\n================================================📦 Дата и время: {time}================================================\n\n\n")
+        # print(tabulate(values, headers="keys", tablefmt="grid"))
 
         formatting_requests = build_formatting_requests(values, sheet_id, start_row, start_col, log_file)
         success = True
