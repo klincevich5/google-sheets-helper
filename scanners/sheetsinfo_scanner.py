@@ -1,7 +1,7 @@
 # scanners/sheetsinfo_scanner.py
 
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import defaultdict
 
 from bot.settings_access import is_scanner_enabled
@@ -9,8 +9,9 @@ from core.data import load_sheetsinfo_tasks
 from utils.logger import log_to_file, log_separator, log_section
 from utils.floor_resolver import get_floor_by_table_name
 from core.token_manager import TokenManager
+from sqlalchemy.orm import Session
 
-from database.db_models import MistakeStorage, FeedbackStorage, FeedbackStatus
+from database.db_models import MistakeStorage, FeedbackStorage, FeedbackStatus, ScheduleOT, TrackedTables
 from utils.db_orm import get_max_last_row
 
 from core.config import (
@@ -49,7 +50,7 @@ class SheetsInfoScanner:
         while True:
             try:
                 if not is_scanner_enabled("sheets_scanner"):
-                    log_to_file(self.log_file, "⏸ Сканер отключён (sheets_scanner). Ожидание...")
+                    # log_to_file(self.log_file, "⏸ Сканер отключён (sheets_scanner). Ожидание...")
                     time.sleep(10)
                     continue
 
@@ -78,12 +79,12 @@ class SheetsInfoScanner:
                         log_to_file(self.log_file, f"❌ Ошибка на этапе {phase_name}: {e}")
                         raise
 
-                log_section(f"🔄 Цикл завершён. Следующее сканирование через {SHEETINFO_INTERVAL} секунд", self.log_file)
-                log_to_file(self.log_file, "\n" * 5)
+                # log_section(f"🔄 Цикл завершён. Следующее сканирование через {SHEETINFO_INTERVAL} секунд", self.log_file)
+                # log_to_file(self.log_file, "\n" * 5)
 
             except Exception as e:
-                log_separator(self.log_file)
-                log_to_file(self.log_file, f"❌ Критическая ошибка в основном цикле: {e}")
+                # log_separator(self.log_file)
+                # log_to_file(self.log_file, f"❌ Критическая ошибка в основном цикле: {e}")
                 time.sleep(10)
                 continue
 
@@ -96,83 +97,83 @@ class SheetsInfoScanner:
 #############################################################################################
 
     def load_tasks(self):
-        log_section("📥 Загрузка задач из SheetsInfo", self.log_file)
+        # log_section("📥 Загрузка задач из SheetsInfo", self.log_file)
 
         self.tasks = load_sheetsinfo_tasks(self.session, self.log_file)
 
         if not self.tasks:
-            log_to_file(self.log_file, "⚪ Нет активных задач для сканирования.")
+            # log_to_file(self.log_file, "⚪ Нет активных задач для сканирования.")
             self.tasks = []
             return
 
-        log_to_file(self.log_file, f"🔄 Загружено задач: {len(self.tasks)}")
+        # log_to_file(self.log_file, f"🔄 Загружено задач: {len(self.tasks)}")
 
         skipped = 0
         for task in self.tasks:
             if not task.assign_doc_ids(self.doc_id_map):
                 skipped += 1
 
-        if skipped:
-            log_to_file(self.log_file, f"⚠️ Пропущено задач без doc_id: {skipped}")
+        # if skipped:
+        #     log_to_file(self.log_file, f"⚠️ Пропущено задач без doc_id: {skipped}")
 
 #############################################################################################
 # Фаза сканирования
 #############################################################################################
 
     def scan_phase(self):
-        log_section("🔍 Фаза сканирования", self.log_file)
+        # log_section("🔍 Фаза сканирования", self.log_file)
 
         if not self.tasks:
-            log_to_file(self.log_file, "⚪ Нет задач для сканирования.")
+            # log_to_file(self.log_file, "⚪ Нет задач для сканирования.")
             return
 
         ready_tasks = [task for task in self.tasks if task.is_ready_to_scan()]
         if not ready_tasks:
-            log_to_file(self.log_file, "⚪ Нет задач, готовых к сканированию.")
+            # log_to_file(self.log_file, "⚪ Нет задач, готовых к сканированию.")
             return
 
-        log_to_file(self.log_file, f"🔎 Найдено {len(ready_tasks)} задач, готовых к сканированию:")
+        # log_to_file(self.log_file, f"🔎 Найдено {len(ready_tasks)} задач, готовых к сканированию:")
 
         scan_groups = defaultdict(list)
         for task in ready_tasks:
             if not task.assign_doc_ids(self.doc_id_map):
-                log_to_file(self.log_file, f"⚠️ [Task {task.name_of_process}] Не удалось сопоставить doc_id. Пропуск.")
+                # log_to_file(self.log_file, f"⚠️ [Task {task.name_of_process}] Не удалось сопоставить doc_id. Пропуск.")
                 continue
             scan_groups[task.scan_group].append(task)
 
         for scan_group, group_tasks in scan_groups.items():
-            log_separator(self.log_file)
-            log_to_file(self.log_file, f"📘 Обработка scan_group: {scan_group} ({len(group_tasks)} задач)")
+            # log_separator(self.log_file)
+            # log_to_file(self.log_file, f"📘 Обработка scan_group: {scan_group} ({len(group_tasks)} задач)")
 
             if not group_tasks:
-                log_to_file(self.log_file, "⚪ В группе нет задач.")
+                # log_to_file(self.log_file, "⚪ В группе нет задач.")
                 continue
 
             doc_id = group_tasks[0].source_doc_id
             unique_sheet_names = set(task.source_page_name for task in group_tasks)
-            log_to_file(self.log_file, f"Уникальные названия листов: {unique_sheet_names}")
+            # log_to_file(self.log_file, f"Уникальные названия листов: {unique_sheet_names}")
 
             exists_map = {
                 sheet_name: check_sheet_exists(self.service, doc_id, sheet_name, self.log_file, self.token_name, self.session)
                 for sheet_name in unique_sheet_names
             }
 
-            for sheet_name, exists in exists_map.items():
-                log_to_file(self.log_file, f"{'✅' if exists else '⚠️'} Лист '{sheet_name}' {'существует' if exists else 'не найден'}.")
+            # for sheet_name, exists in exists_map.items():
+            #     log_to_file(self.log_file, f"{'✅' if exists else '⚠️'} Лист '{sheet_name}' {'существует' if exists else 'не найден'}.")
 
             valid_tasks = []
             for task in group_tasks:
                 sheet_name = task.source_page_name
                 if exists_map.get(sheet_name):
-                    log_to_file(self.log_file, f"➡️ Используем '{sheet_name}' для задачи {task.name_of_process}.")
+                    # log_to_file(self.log_file, f"➡️ Используем '{sheet_name}' для задачи {task.name_of_process}.")
                     valid_tasks.append(task)
                 else:
-                    log_to_file(self.log_file, f"⛔ Пропуск задачи {task.name_of_process}: лист '{sheet_name}' не найден.")
+                    # log_to_file(self.log_file, f"⛔ Пропуск задачи {task.name_of_process}: лист '{sheet_name}' не найден.")
                     task.update_after_scan(success=False)
                     update_task_scan_fields(self.session, task, self.log_file, table_name="SheetsInfo")
 
             if not valid_tasks:
-                log_to_file(self.log_file, f"⚪ Все задачи группы {scan_group} отфильтрованы. Пропуск batchGet.")
+                # log_to_file(self.log_file, f"⚪ Все задачи группы {scan_group} отфильтрованы. Пропуск batchGet.")
                 continue
 
             range_to_tasks = defaultdict(list)
@@ -182,11 +183,11 @@ class SheetsInfoScanner:
 
             ranges = list(range_to_tasks.keys())
 
-            log_to_file(self.log_file, "")
-            log_to_file(self.log_file, f"📤 Отправка batchGet на документ {task.source_table_type} с {len(ranges)} уникальными диапазонами:")
+            # log_to_file(self.log_file, "")
+            # log_to_file(self.log_file, f"📤 Отправка batchGet на документ {task.source_table_type} с {len(ranges)} уникальными диапазонами:")
             
-            for r in ranges:
-                log_to_file(self.log_file, f"   • {r}")
+            # for r in ranges:
+            #     log_to_file(self.log_file, f"   • {r}")
 
             response_data = batch_get(
                 self.service,
@@ -198,7 +199,7 @@ class SheetsInfoScanner:
                 self.session
             )
             if not response_data:
-                log_to_file(self.log_file, "❌ Пустой ответ от batchGet. Все задачи будут отмечены как неудачные.")
+                # log_to_file(self.log_file, "❌ Пустой ответ от batchGet. Все задачи будут отмечены как неудачные.")
                 for task in valid_tasks:
                     task.update_after_scan(success=False)
                     update_task_scan_fields(self.session, task, self.log_file, table_name="SheetsInfo")
@@ -211,8 +212,8 @@ class SheetsInfoScanner:
                     sheet_name, cells_range = clean_key.split("!", 1)
                     normalized_response[(sheet_name.strip(), cells_range.strip())] = v
 
-            log_to_file(self.log_file, "")
-            log_to_file(self.log_file, f"📥 Получены диапазоны: {list(normalized_response.keys())}")
+            # log_to_file(self.log_file, "")
+            # log_to_file(self.log_file, f"📥 Получены диапазоны: {list(normalized_response.keys())}")
 
             for task in valid_tasks:
                 expected_sheet = task.source_page_name.strip()
@@ -228,25 +229,25 @@ class SheetsInfoScanner:
                     task.raw_values_json = matched_values
                     task.update_after_scan(success=True)
                     update_task_scan_fields(self.session, task, self.log_file, table_name="SheetsInfo")
-                    log_to_file(self.log_file, f"✅ [Task {task.name_of_process}] Найден диапазон {sheet_name}!{cells_range}, строк: {len(matched_values)}")
+                    # log_to_file(self.log_file, f"✅ [Task {task.name_of_process}] Найден диапазон {sheet_name}!{cells_range}, строк: {len(matched_values)}")
                 else:
                     task.update_after_scan(success=False)
                     update_task_scan_fields(self.session, task, self.log_file, table_name="SheetsInfo")
-                    log_to_file(self.log_file, f"⚠️ [Task {task.name_of_process}] Диапазон {expected_sheet}!{task.source_page_area} не найден или пуст.")
+                    # log_to_file(self.log_file, f"⚠️ [Task {task.name_of_process}] Диапазон {expected_sheet}!{task.source_page_area} не найден или пуст.")
 
-        for task in self.tasks:
-            log_to_file(
-                self.log_file,
-                f"⚪ [Task {task.name_of_process}] Отсканировано: {task.scanned} | "
-                f"Обработано: {task.proceed} | Изменено: {task.changed} | Загружено: {task.uploaded}"
-            )
+        # for task in self.tasks:
+        #     log_to_file(
+        #         self.log_file,
+        #         f"⚪ [Task {task.name_of_process}] Отсканировано: {task.scanned} | "
+        #         f"Обработано: {task.proceed} | Изменено: {task.changed} | Загружено: {task.uploaded}"
+        #     )
 
 #############################################################################################
 # Фаза обработки
 #############################################################################################
 
     def process_phase(self):
-        log_section("🛠️ Фаза обработки", self.log_file)
+        # log_section("🛠️ Фаза обработки", self.log_file)
 
         if not self.tasks:
             log_to_file(self.log_file, "⚪ Нет задач для обработки.")
@@ -261,14 +262,14 @@ class SheetsInfoScanner:
                 try:
                     task.process_raw_value()
                 except Exception as e:
-                    log_to_file(self.log_file, f"❌ [Task {task.name_of_process}] Ошибка в process_raw_value: {e}")
+                    # log_to_file(self.log_file, f"❌ [Task {task.name_of_process}] Ошибка в process_raw_value: {e}")
                     continue
 
                 # Проверка изменений
                 try:
                     task.check_for_update()
                 except Exception as e:
-                    log_to_file(self.log_file, f"❌ [Task {task.name_of_process}] Ошибка в check_for_update: {e}")
+                    # log_to_file(self.log_file, f"❌ [Task {task.name_of_process}] Ошибка в check_for_update: {e}")
                     continue
 
                 # Обновление в БД, если данные изменились
@@ -281,13 +282,13 @@ class SheetsInfoScanner:
             except Exception as e:
                 log_to_file(self.log_file, f"❌ [Task {task.name_of_process}] Неизвестная ошибка при обработке: {e}")
 
-        # Итоговый отчёт
-        for task in self.tasks:
-            log_to_file(
-                self.log_file,
-                f"⚪ [Task {task.name_of_process}] Отсканировано: {task.scanned} | "
-                f"Обработано: {task.proceed} | Изменено: {task.changed} | Загружено: {task.uploaded}"
-            )
+        # # Итоговый отчёт
+        # for task in self.tasks:
+        #     log_to_file(
+        #         self.log_file,
+        #         f"⚪ [Task {task.name_of_process}] Отсканировано: {task.scanned} | "
+        #         f"Обработано: {task.proceed} | Изменено: {task.changed} | Загружено: {task.uploaded}"
+        #     )
 
 #############################################################################################
 # Фаза обновления
@@ -297,19 +298,23 @@ class SheetsInfoScanner:
         log_section("🔼 Фаза обновления", self.log_file)
 
         # --- Категоризация задач ---
-        tasks_to_update = [t for t in self.tasks if t.values_json and t.changed and t.update_group not in {"update_mistakes_in_db", "feedback_status_update"}]
+        tasks_to_update = [t for t in self.tasks if t.values_json and t.changed and t.update_group not in {"update_mistakes_in_db", "feedback_status_update", "update_schedule_OT"}]
         mistakes_to_update = [t for t in self.tasks if t.values_json and t.changed and t.update_group == "update_mistakes_in_db"]
         feedback_to_update = [t for t in self.tasks if t.values_json and t.changed and t.update_group == "feedback_status_update"]
+        schedule_OT_to_update = [t for t in self.tasks if t.values_json and t.changed and t.update_group == "update_schedule_OT"]
 
-        log_to_file(self.log_file, f"🔼 Задач для обновления: {len(tasks_to_update)}")
-        for task in tasks_to_update:
-            log_to_file(self.log_file, f"   • {task.name_of_process} ({task.update_group})")
-        log_to_file(self.log_file, f"🔼 Ошибок для обновления: {len(mistakes_to_update)}")
-        for task in mistakes_to_update:
-            log_to_file(self.log_file, f"   • {task.name_of_process} ({task.update_group})")
-        log_to_file(self.log_file, f"🔼 Фидбеков для обновления: {len(feedback_to_update)}")
-        for task in feedback_to_update:
-            log_to_file(self.log_file, f"   • {task.name_of_process} ({task.update_group})")
+        # log_to_file(self.log_file, f"🔼 Задач для обновления: {len(tasks_to_update)}")
+        # for task in tasks_to_update:
+        #     log_to_file(self.log_file, f"   • {task.name_of_process} ({task.update_group})")
+        # log_to_file(self.log_file, f"🔼 Ошибок для обновления: {len(mistakes_to_update)}")
+        # for task in mistakes_to_update:
+        #     log_to_file(self.log_file, f"   • {task.name_of_process} ({task.update_group})")
+        # log_to_file(self.log_file, f"🔼 Фидбеков для обновления: {len(feedback_to_update)}")
+        # for task in feedback_to_update:
+        #     log_to_file(self.log_file, f"   • {task.name_of_process} ({task.update_group})")
+        # log_to_file(self.log_file, f"🔼 Schedule OT для обновления: {len(schedule_OT_to_update)}")
+        # for task in schedule_OT_to_update:
+        #     log_to_file(self.log_file, f"   • {task.name_of_process} ({task.update_group})")
 
         # # --- Обычные задачи ---
         if tasks_to_update:
@@ -334,26 +339,34 @@ class SheetsInfoScanner:
             except Exception as e:
                 log_to_file(self.log_file, f"❌ Ошибка при обновлении фидбеков: {e}")
 
-        # --- Статистика по задачам ---
-        for task in self.tasks:
-            log_to_file(
-                self.log_file,
-                f"⚪ [Task {task.name_of_process}] Отсканировано: {task.scanned} | "
-                f"Обработано: {task.proceed} | Изменено: {task.changed} | Загружено: {task.uploaded}"
-            )
+        # --- Schedule GP ---
+        if schedule_OT_to_update:
+            try:
+                self.import_schedule_OT_to_update(schedule_OT_to_update)
+            except Exception as e:
+                log_to_file(self.log_file, f"❌ Ошибка при обновлении schedule OT: {e}")
+            time.sleep(3)
+
+        # # --- Статистика по задачам ---
+        # for task in self.tasks:
+        #     log_to_file(
+        #         self.log_file,
+        #         f"⚪ [Task {task.name_of_process}] Отсканировано: {task.scanned} | "
+        #         f"Обработано: {task.proceed} | Изменено: {task.changed} | Загружено: {task.uploaded}"
+        #     )
 
         if not (tasks_to_update or mistakes_to_update or feedback_to_update):
-            log_to_file(self.log_file, "⚪ Нет задач для обновления.")
+            # log_to_file(self.log_file, "⚪ Нет задач для обновления.")
             return
 
-        log_section("🔼 Обновление завершено.", self.log_file)
+        # log_section("🔼 Обновление завершено.", self.log_file)
 
 ##############################################################################################
 # Импорт Обычных задач 
 ##############################################################################################
 
     def import_tasks_to_update(self, tasks_to_update):
-        log_to_file(self.log_file, f"🔄 Начало фазы tasks_to_update. Всего задач: {len(tasks_to_update)}")
+        # log_to_file(self.log_file, f"🔄 Начало фазы tasks_to_update. Всего задач: {len(tasks_to_update)}")
 
         # Группировка задач по update_group
         tasks_by_group = defaultdict(list)
@@ -361,14 +374,14 @@ class SheetsInfoScanner:
             tasks_by_group[task.update_group].append(task)
 
         for update_group, group_tasks in tasks_by_group.items():
-            log_to_file(self.log_file, f"🔄 Обработка группы: {update_group} ({len(group_tasks)} задач)")
+            # log_to_file(self.log_file, f"🔄 Обработка группы: {update_group} ({len(group_tasks)} задач)")
 
             doc_id = group_tasks[0].target_doc_id
             batch_data = []
 
             for task in group_tasks:
                 if not task.values_json:
-                    log_to_file(self.log_file, f"⚪ [Task {task.name_of_process}] Нет данных, пропуск.")
+                    # log_to_file(self.log_file, f"⚪ [Task {task.name_of_process}] Нет данных, пропуск.")
                     continue
 
                 batch_data.append({
@@ -377,10 +390,10 @@ class SheetsInfoScanner:
                 })
 
             if not batch_data:
-                log_to_file(self.log_file, f"⚪ Нет валидных данных для batchUpdate группы {update_group}.")
+                # log_to_file(self.log_file, f"⚪ Нет валидных данных для batchUpdate группы {update_group}.")
                 continue
-            for data in batch_data:
-                print(f"   • {data['range']} ({len(data['values'])} строк)")
+            # for data in batch_data:
+            #     print(f"   • {data['range']} ({len(data['values'])} строк)")
 
             # Пакетная отправка
             success, error = batch_update(
@@ -394,7 +407,7 @@ class SheetsInfoScanner:
             )
 
             if success:
-                log_to_file(self.log_file, f"✅ Пакетное обновление успешно для группы {update_group}")
+                # log_to_file(self.log_file, f"✅ Пакетное обновление успешно для группы {update_group}")
                 for task in group_tasks:
                     task.update_after_upload(success=True)
                     update_task_update_fields(
@@ -404,8 +417,8 @@ class SheetsInfoScanner:
                         table_name="SheetsInfo"
                     )
             else:
-                log_to_file(self.log_file, f"❌ Ошибка при пакетной отправке: {error}")
-                log_to_file(self.log_file, "🔁 Переход к одиночной отправке задач")
+                # log_to_file(self.log_file, f"❌ Ошибка при пакетной отправке: {error}")
+                # log_to_file(self.log_file, "🔁 Переход к одиночной отправке задач")
 
                 for task in group_tasks:
                     if not task.values_json:
@@ -426,10 +439,10 @@ class SheetsInfoScanner:
                         session=self.session
                     )
 
-                    if single_success:
-                        log_to_file(self.log_file, f"✅ [Task {task.name_of_process}] Обновлена поштучно.")
-                    else:
-                        log_to_file(self.log_file, f"❌ [Task {task.name_of_process}] Ошибка при обновлении: {single_error}")
+                    # if single_success:
+                    #     log_to_file(self.log_file, f"✅ [Task {task.name_of_process}] Обновлена поштучно.")
+                    # else:
+                    #     log_to_file(self.log_file, f"❌ [Task {task.name_of_process}] Ошибка при обновлении: {single_error}")
 
                     task.update_after_upload(success=single_success)
                     update_task_update_fields(
@@ -464,7 +477,7 @@ class SheetsInfoScanner:
 
 
     def import_mistakes_to_update(self, mistakes_to_update):
-        log_to_file(self.log_file, f"🔄 Начало фазы mistakes_to_update. Задач для выгрузки: {len(mistakes_to_update)}.")
+        # log_to_file(self.log_file, f"🔄 Начало фазы mistakes_to_update. Задач для выгрузки: {len(mistakes_to_update)}.")
         session = self.session
 
         try:
@@ -479,7 +492,7 @@ class SheetsInfoScanner:
                         continue
 
                     if not row or len(row) < 8:
-                        log_to_file(self.log_file, f"⚠️ Пропущена пустая или неполная строка {row_index} из {page_name}: {row}")
+                        # log_to_file(self.log_file, f"⚠️ Пропущена пустая или неполная строка {row_index} из {page_name}: {row}")
                         continue
 
                     try:
@@ -503,11 +516,11 @@ class SheetsInfoScanner:
                         continue
 
             session.commit()
-            log_to_file(self.log_file, "✅ Все ошибки успешно импортированы.")
+            # log_to_file(self.log_file, "✅ Все ошибки успешно импортированы.")
 
         except Exception as task_err:
             session.rollback()
-            log_to_file(self.log_file, f"❌ Ошибка при обработке mistakes_to_update: {task_err}")
+            # log_to_file(self.log_file, f"❌ Ошибка при обработке mistakes_to_update: {task_err}")
 
 ################################################################################################
 # Импорт статуса фидбеков
@@ -525,7 +538,7 @@ class SheetsInfoScanner:
                 break
 
         if not sheet_id or not target_range:
-            log_to_file(self.log_file, "⚠️ Не найден лист для обновления статусов GP.")
+            # log_to_file(self.log_file, "⚠️ Не найден лист для обновления статусов GP.")
             return []
 
         try:
@@ -566,9 +579,9 @@ class SheetsInfoScanner:
             session.commit()
 
             output = [[name, gp_status.get(name, "✅")] for name in sheet_names]  # По умолчанию ✅
-            for name in gp_status:
-                print(f"GP: {name} - {gp_status[name]}")
-            log_to_file(self.log_file, f"✅ Статусы GP обновлены: {len(output)}")
+            # for name in gp_status:
+            #     print(f"GP: {name} - {gp_status[name]}")
+            # log_to_file(self.log_file, f"✅ Статусы GP обновлены: {len(output)}")
 
             sheets_service.spreadsheets().values().update(
                 spreadsheetId=sheet_id,
@@ -658,7 +671,89 @@ class SheetsInfoScanner:
             session.commit()
         except Exception as e:
             session.rollback()
-            log_to_file(self.log_file, f"❌ Ошибка при импорте фидбеков: {e}")
+            # log_to_file(self.log_file, f"❌ Ошибка при импорте фидбеков: {e}")
         finally:
             self.update_gp_statuses_in_sheet(sheets_service)
-            log_to_file(self.log_file, "🔄 Завершение фазы feedback_status_update.")
+            # log_to_file(self.log_file, "🔄 Завершение фазы feedback_status_update.")
+
+
+###############################################################################################
+# Импорт Schedule OT
+################################################################################################
+
+    def import_schedule_OT_to_update(self, tasks):
+        if not tasks:
+            log_to_file(self.log_file, "⚠️ Пустой список задач в import_schedule_OT_to_update")
+            return
+
+        task = tasks[0]
+        spreadsheet_id = task.source_doc_id
+        values = task.values_json
+        session = self.session
+
+        # Получаем valid_from
+        tracked = session.query(TrackedTables).filter_by(spreadsheet_id=spreadsheet_id).first()
+        if not tracked or not tracked.valid_from:
+            # log_to_file(self.log_file, f"❌ Не найден valid_from для spreadsheet_id={spreadsheet_id}")
+            return
+
+        valid_from = tracked.valid_from
+        related_month = valid_from.replace(day=1)
+
+        if not values or len(values) == 0:
+            # log_to_file(self.log_file, "❌ values_json пуст или некорректен")
+            return
+
+        # Загружаем существующие записи
+        existing_records = session.query(ScheduleOT).filter_by(related_month=related_month).all()
+        existing_lookup = {
+            (rec.dealer_name.strip(), rec.date): rec for rec in existing_records
+        }
+
+        new_entries = 0
+        updated_entries = 0
+
+        for row in values:
+            if not row or len(row) < 2:
+                continue
+
+            dealer_name = row[0]
+            if not dealer_name or not isinstance(dealer_name, str):
+                continue
+
+            dealer_name = dealer_name.strip()
+
+            for col_idx, shift in enumerate(row[1:], start=1):  # 1-based index = day number
+                if not shift or not isinstance(shift, str) or shift.strip() in {"", "-", "/"}:
+                    continue
+
+                try:
+                    shift_date = related_month.replace(day=col_idx)
+                except ValueError:
+                    continue  # например, если день > 31
+
+                shift_type = shift.strip()
+                key = (dealer_name, shift_date)
+
+                if key in existing_lookup:
+                    record = existing_lookup[key]
+                    if record.shift_type != shift_type:
+                        record.shift_type = shift_type
+                        updated_entries += 1
+                else:
+                    new_record = ScheduleOT(
+                        date=shift_date,
+                        dealer_name=dealer_name,
+                        shift_type=shift_type,
+                        related_month=related_month
+                    )
+                    session.add(new_record)
+                    new_entries += 1
+
+        session.commit()
+
+        log_to_file(
+            self.log_file,
+            f"✅ ScheduleOT: {related_month.strftime('%B %Y')} — "
+            f"{new_entries} новых, {updated_entries} обновлено."
+        )

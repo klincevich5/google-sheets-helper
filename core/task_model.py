@@ -102,6 +102,7 @@ class Task:
             raise ValueError(f"Неизвестный метод обработки: {method_name}")
 
         try:
+            # отдельная обработка process_schedule_OT так как она требует source_doc_id для определения месяца
             processed_values = process_func(self.raw_values_json, self.source_page_area)
             if not isinstance(processed_values, list) or not all(isinstance(row, list) for row in processed_values):
                 raise ValueError("❌ Обработанные данные не являются списком списков")

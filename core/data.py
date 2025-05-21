@@ -54,6 +54,8 @@ def get_active_tabs(now=None):
         tab_list.append(f"DAY {now.day}")
         tab_list.append(f"NIGHT {yesterday.day}")
 
+    # tab_list = [f"{period} {i}" for i in range(15, 21) for period in ("DAY", "NIGHT")]
+
     return tab_list
 
 def load_rotationsinfo_tasks(session: Session, log_file):
@@ -62,9 +64,16 @@ def load_rotationsinfo_tasks(session: Session, log_file):
     now = datetime.now(timezone)
     active_tabs = get_active_tabs(now)
 
+    # Получаем первое число текущего месяца с учетом часового пояса
+    first_of_month = datetime(now.year, now.month, 1, tzinfo=timezone)
+
     tasks = []
 
-    rows = session.query(RotationsInfo).filter(RotationsInfo.is_active == 1).all()
+    # Добавляем фильтрацию по related_month
+    rows = session.query(RotationsInfo).filter(
+        RotationsInfo.is_active == 1,
+        RotationsInfo.related_month == first_of_month
+    ).all()
 
     for row in rows:
         if row.source_page_name not in active_tabs:
@@ -78,7 +87,7 @@ def load_rotationsinfo_tasks(session: Session, log_file):
 
         next_scan_dt = last_scan + timedelta(seconds=row.scan_interval)
         minutes_left = int((next_scan_dt - now).total_seconds() / 60)
-        status = "READY" if now >= next_scan_dt else "WAITING"
+        status = "✅READY" if now >= next_scan_dt else "❌WAITING"
 
         log_to_file(
             log_file,
@@ -126,25 +135,27 @@ def load_sheetsinfo_tasks(session: Session, log_file):
     """Загрузка актуальных задач из SheetsInfo с логированием."""
     log_section("🔼 Фаза определения задач", log_file)
 
-    tz = timezone
-    now = datetime.now(tz)
+    now = datetime.now(timezone)
+    first_of_month = datetime(now.year, now.month, 1, tzinfo=timezone)
     tasks = []
 
-    rows = session.query(SheetsInfo).filter(SheetsInfo.is_active == 1).all()
+    rows = session.query(SheetsInfo).filter(
+        SheetsInfo.is_active == 1,
+        SheetsInfo.related_month == first_of_month).all()
 
     for row in rows:
-        last_scan = row.last_scan or datetime.min.replace(tzinfo=tz)
+        last_scan = row.last_scan or datetime.min.replace(tzinfo=timezone)
 
         # Приведение строки к datetime
         if isinstance(last_scan, str):
             try:
                 last_scan = datetime.fromisoformat(last_scan)
             except ValueError:
-                last_scan = datetime.min.replace(tzinfo=tz)
+                last_scan = datetime.min.replace(tzinfo=timezone)
 
         # Установка tzinfo, если нет
         if last_scan.tzinfo is None or isinstance(last_scan.tzinfo, str):
-            last_scan = last_scan.replace(tzinfo=tz)
+            last_scan = last_scan.replace(tzinfo=timezone)
 
         next_scan_dt = last_scan + timedelta(seconds=row.scan_interval)
         minutes_left = int((next_scan_dt - now).total_seconds() // 60)

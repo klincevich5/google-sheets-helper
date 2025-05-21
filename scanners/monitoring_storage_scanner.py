@@ -2,19 +2,10 @@
 
 from sqlalchemy import select
 import re
-import time
 from datetime import datetime, timedelta
 from core.config import MONITORING_LOG
 from collections import defaultdict
-from utils.logger import (
-    log_to_file,
-    log_separator,
-    log_section
-)
-from utils.utils import (
-    batch_get,
-    batch_update
-)
+from utils.logger import log_to_file
 from database.db_models import (
     MonitoringStorage,
     RotationsInfo,
@@ -87,13 +78,16 @@ class MonitoringStorageScanner:
         log_to_file(MONITORING_LOG, f"🌀 Дата: {self.date}")
 
         # --- Bulk load all needed data into memory for fast access ---
+        self._load_caches()
+
+    def _load_caches(self):
         import json
         from core.config import FLOORS as FLOORS_DICT, ROTATION_ORDER
         self.FLOORS_DICT = FLOORS_DICT
         self.ROTATION_ORDER = ROTATION_ORDER
         related_month = self.date.replace(day=1)
 
-        # 1. Floor lists (permits) — имена без lower()
+        # 1. Floor lists (permits)
         self.floor_lists = {}
         for floor in FLOORS_DICT.keys():
             process_name = f"Floor list {floor}"
@@ -117,7 +111,7 @@ class MonitoringStorageScanner:
                         names_set.add(full_entry)
             self.floor_lists[floor] = names_set
 
-        # 2. Game permits (permits by floor) — имена без lower()
+        # 2. Game permits (permits by floor)
         self.game_permits = {}
         for floor in FLOORS_DICT.keys():
             process_name = f"Permits {floor}"
@@ -141,42 +135,67 @@ class MonitoringStorageScanner:
                         floor_permits[name] = permits
             self.game_permits[floor] = floor_permits
 
-        # 3. Mistakes (by (dealer, date) tuple)
-        self.mistakes_by_dealer_date = defaultdict(list)
+        # 3. Mistakes (by (dealer, date, shift_type) tuple)
+        self.mistakes_by_dealer_date_shift = defaultdict(list)
         for entry in self.session.query(MistakeStorage).filter_by(date=self.date).all():
-            self.mistakes_by_dealer_date[(entry.dealer, self.date)].append(entry)
+            shift_type = None
+            if entry.time:
+                hour = entry.time.hour
+                if 10 <= hour < 22:
+                    shift_type = "Day"
+                else:
+                    shift_type = "Night"
+            else:
+                shift_type = "Day"  # fallback
+            self.mistakes_by_dealer_date_shift[(entry.dealer, self.date, shift_type)].append(entry)
 
         # 4. Feedbacks (by (dealer, date) tuple)
         self.feedbacks_by_dealer_date = defaultdict(list)
         for entry in self.session.query(FeedbackStorage).filter_by(date=self.date).all():
             self.feedbacks_by_dealer_date[(entry.gp_name_surname, self.date)].append(entry)
 
-        # 5. Rotations (by (floor, date) tuple)
-        self.rotations_by_floor_date = defaultdict(list)
-        for rot in self.session.query(RotationsInfo).filter(
-            RotationsInfo.related_month == self.date,
+        # 5. Rotations (by (floor, date, shift_type) tuple)
+        self.rotations_by_floor_date_shift = defaultdict(list)
+        # log_to_file(MONITORING_LOG, f"[ROTATION-DB] related_month={related_month} ROTATION_ORDER={ROTATION_ORDER}")
+        all_rotations = self.session.query(RotationsInfo).filter(
+            RotationsInfo.related_month == related_month,
             RotationsInfo.name_of_process.in_(ROTATION_ORDER)
-        ).all():
-            floor = rot.source_page_name
+        ).all()
+        # log_to_file(MONITORING_LOG, f"[ROTATION-DB] Найдено записей: {len(all_rotations)}")
+        for rot in all_rotations:
+            # log_to_file(MONITORING_LOG, f"[ROTATION-DB] name_of_process={rot.name_of_process} source_page_name={rot.source_page_name} related_month={rot.related_month}")
+            # floor теперь из name_of_process
+            floor = rot.name_of_process.split()[0].upper()
+            page = rot.source_page_name.upper().split()
+            if len(page) < 2:
+                continue
+            shift_type = "Day" if page[0] == "DAY" else ("Night" if page[0] == "NIGHT" else None)
+            try:
+                date_num = int(page[1])
+            except Exception:
+                continue
+            rot_date = self.date.replace(day=date_num)
             values = []
             try:
                 values = json.loads(rot.values_json) if rot.values_json else []
             except Exception:
                 values = []
-            self.rotations_by_floor_date[(floor, self.date)].append(values)
+            self.rotations_by_floor_date_shift[(floor, rot_date, shift_type)].append(values)
+        # log_to_file(MONITORING_LOG, f"[ROTATION-DB] Итоговые ключи: {list(self.rotations_by_floor_date_shift.keys())}")
 
     def run(self):
-        log_to_file(MONITORING_LOG, f"🌀 Запуск MonitoringStorageScanner на {self.date}")
+        self._load_caches()  # <-- теперь кэш обновляется для каждой даты/смены
+        # log_to_file(MONITORING_LOG, f"🌀 Запуск MonitoringStorageScanner на {self.date}")
 
         import time as _time
         dealers = self._get_all_dealers()
         for idx, (dealer_name, nicknames) in enumerate(dealers, 1):
             try:
                 t0 = _time.time()
-                log_to_file(MONITORING_LOG, f"\n🌀 Обработка дилера {idx}/{len(dealers)}: {dealer_name} с никнеймами: {nicknames}\n")
+                # log_to_file(MONITORING_LOG, f"\n🌀 Обработка дилера {idx}/{len(dealers)}: {dealer_name} с никнеймами: {nicknames}\n")
                 data = self._build_json(dealer_name, nicknames)
                 t1 = _time.time()
-                log_to_file(MONITORING_LOG, f"\n🌀 Получены данные для {dealer_name} (поиск занял {t1-t0:.3f} сек):")
+                # log_to_file(MONITORING_LOG, f"\n🌀 Получены данные для {dealer_name} (поиск занял {t1-t0:.3f} сек):")
                 task = MonitoringStorageTask(self._convert_to_task_dict(dealer_name, nicknames, data))
                 # pretty_print_dealer_info(task.__dict__)
                 self._save(task)
@@ -196,7 +215,7 @@ class MonitoringStorageScanner:
             "shift_type": shift.get("type"),
             "shift_start": shift.get("start"),
             "shift_end": shift.get("end"),
-            "break_number": 0,
+            "break_number": shift.get("break_number", 0),  # <-- исправлено: теперь берём из shift
             "is_scheduled": shift.get("is_scheduled", False),
             "is_additional": shift.get("is_additional", False),
             "is_extra": shift.get("is_extra", False),
@@ -292,15 +311,15 @@ class MonitoringStorageScanner:
                 found = dealer_name in self.floor_lists.get(floor, set())
                 result[floor] = found
                 marker = "✅" if found else "❌"
-                log_to_file(MONITORING_LOG, f"[FLOOR_PERMITS] {marker} {dealer_name} на {floor}")
+                # log_to_file(MONITORING_LOG, f"[FLOOR_PERMITS] {marker} {dealer_name} на {floor}")
                 if found:
                     found_any = True
             except Exception as e:
                 error_msg = f"[FLOOR_PERMITS ERROR] {dealer_name} / {floor}: {e}"
-                log_to_file(MONITORING_LOG, error_msg)
+                # log_to_file(MONITORING_LOG, error_msg)
                 result[floor] = error_msg
-        if not found_any:
-            log_to_file(MONITORING_LOG, f"[FLOOR_PERMITS WARNING] 🚫 Имя '{dealer_name}' не найдено ни в одном floor_list! Возможно, ошибка в написании имени.")
+        # if not found_any:
+            # log_to_file(MONITORING_LOG, f"[FLOOR_PERMITS WARNING] 🚫 Имя '{dealer_name}' не найдено ни в одном floor_list! Возможно, ошибка в написании имени.")
         return result
 
     def _get_game_permits(self, dealer_name):
@@ -325,31 +344,32 @@ class MonitoringStorageScanner:
                             val = permits.get(game)
                             result[game] = True if val is True else False
                     found = True
-                    log_to_file(MONITORING_LOG, f"[GAME_PERMITS] ✅ {dealer_name} найден в {floor}")
+                    # log_to_file(MONITORING_LOG, f"[GAME_PERMITS] ✅ {dealer_name} найден в {floor}")
                     break
-                else:
-                    log_to_file(MONITORING_LOG, f"[GAME_PERMITS] ❌ {dealer_name} не найден в {floor}")
+                # else:
+                #     log_to_file(MONITORING_LOG, f"[GAME_PERMITS] ❌ {dealer_name} не найден в {floor}")
             except Exception as e:
                 error_msg = f"[GAME_PERMITS ERROR] {dealer_name} / {floor}: {e}"
-                log_to_file(MONITORING_LOG, error_msg)
+                # log_to_file(MONITORING_LOG, error_msg)
         if not found:
             for game in games:
                 result[game] = error_msg or '❌' if game != 'SH' else '❌'
-            log_to_file(MONITORING_LOG, f"[GAME_PERMITS WARNING] 🚫 Имя '{dealer_name}' не найдено ни в одном game_permits! Возможно, ошибка в написании имени.")
+            # log_to_file(MONITORING_LOG, f"[GAME_PERMITS WARNING] 🚫 Имя '{dealer_name}' не найдено ни в одном game_permits! Возможно, ошибка в написании имени.")
         return result
 
     def _get_mistakes(self, dealer):
         """
-        Быстрый поиск ошибок по in-memory self.mistakes_by_dealer.
-        Если имя не найдено, пишет ошибку в лог.
+        Быстрый поиск ошибок по in-memory self.mistakes_by_dealer_date_shift.
+        Использует текущую смену (self.current_shift_type).
         """
+        shift_type = getattr(self, 'current_shift_type', None) or "Day"
         try:
-            entries = self.mistakes_by_dealer_date.get((dealer, self.date), [])
+            entries = self.mistakes_by_dealer_date_shift.get((dealer, self.date, shift_type), [])
         except Exception as e:
-            log_to_file(MONITORING_LOG, f"[MISTAKES ERROR] {dealer}: {e}")
+            # log_to_file(MONITORING_LOG, f"[MISTAKES ERROR] {dealer}: {e}")
             entries = []
-        if not entries:
-            log_to_file(MONITORING_LOG, f"[MISTAKES WARNING] Имя '{dealer}' не найдено в mistakes! Возможно, ошибка в написании имени.")
+        # if not entries:
+        #     log_to_file(MONITORING_LOG, f"[MISTAKES WARNING] Имя '{dealer}' не найдено в mistakes для смены {shift_type}! Возможно, ошибка в написании имени.")
         table_map = {}
         for entry in entries:
             table = entry.table_name
@@ -371,10 +391,10 @@ class MonitoringStorageScanner:
         try:
             entries = self.feedbacks_by_dealer_date.get((dealer, self.date), [])
         except Exception as e:
-            log_to_file(MONITORING_LOG, f"[FEEDBACKS ERROR] {dealer}: {e}")
+            # log_to_file(MONITORING_LOG, f"[FEEDBACKS ERROR] {dealer}: {e}")
             entries = []
-        if not entries:
-            log_to_file(MONITORING_LOG, f"[FEEDBACKS WARNING] Имя '{dealer}' не найдено в feedbacks! Возможно, ошибка в написании имени.")
+        # if not entries:
+        #     log_to_file(MONITORING_LOG, f"[FEEDBACKS WARNING] Имя '{dealer}' не найдено в feedbacks! Возможно, ошибка в написании имени.")
         result = []
         for entry in entries:
             result.append({
@@ -392,132 +412,153 @@ class MonitoringStorageScanner:
         return result
 
     def _get_shift_info(self, dealer):
-        """
-        Быстрый поиск ротаций по in-memory self.rotations_by_floor.
-        """
-        assigned_floors = []
-        floor_rotations = {}
-        for floor, all_rotations in self.rotations_by_floor_date.items():
-            for values in all_rotations:
-                found = False
-                for row in values:
-                    if isinstance(row, list) and dealer in row:
-                        found = True
-                        break
-                    if isinstance(row, dict) and dealer in row.values():
-                        found = True
-                        break
-                if found:
-                    assigned_floors.append(floor)
-                    floor_rotations[floor] = values
-        # Формируем расписание на 12 часов с шагом 30 минут
-        def build_schedule(floor, values):
-            schedule = []
-            from datetime import datetime, timedelta
-            start_time = datetime.strptime("09:00", "%H:%M")
-            for i in range(24):
-                t = (start_time + timedelta(minutes=30*i)).strftime("%H:%M")
-                table = ""
-                for row in values:
-                    if isinstance(row, dict) and row.get("time") == t and row.get("dealer") == dealer:
-                        table = row.get("table", "")
-                        break
-                    if isinstance(row, list) and len(row) >= 3 and row[0] == t and row[1] == dealer:
-                        table = row[2]
-                        break
-                schedule.append({"time": t, "table": table})
-            return schedule
-        rotation = []
-        for floor, values in floor_rotations.items():
-            rotation.append({
-                "floor": floor,
-                "schedule": build_schedule(floor, values)
-            })
-        # Используем текущий тип смены и время, если заданы (для поддержки day/night из scan_all_shifts_for_month)
-        shift_type = getattr(self, 'current_shift_type', None) or "Day"
-        start = getattr(self, 'current_shift_start', None) or "09:00"
-        end = getattr(self, 'current_shift_end', None) or "21:00"
-        extra_flags = {
-            "is_scheduled": True,
-            "is_additional": False,
-            "is_extra": False,
-            "is_sickleave": False,
-            "is_vacation": False,
-            "is_did_not_come": False,
-            "is_left_the_shift": False
-        }
-        if shift_type == "Night":
-            start = "21:00"
-            end = "09:00"
-        else:
-            start = "09:00"
-            end = "21:00"
-        return {
-            "type": shift_type,
-            **extra_flags,
-            "start": start,
-            "end": end,
-            "assigned_floors": assigned_floors,
-            "rotation": rotation
-        }
-    
+        try:
+            from core.config import ROTATION_ORDER
+            shift_type = getattr(self, 'current_shift_type', None) or "Day"
+            assigned_floors = []
+            rotation = []
+            min_break_number = None
+            # log_to_file(MONITORING_LOG, f"[ROTATION] Поиск ротаций для дилера '{dealer}' на {self.date} ({shift_type})")
+        #    log_to_file(MONITORING_LOG, f"[ROTATION] Ключи в self.rotations_by_floor_date_shift: {list(self.rotations_by_floor_date_shift.keys())}")
+            for name in ROTATION_ORDER:
+                # log_to_file(MONITORING_LOG, f"[ROTATION] Проверяю ROTATION_ORDER: {name}")
+                for (floor, date, s_type), all_rotations in self.rotations_by_floor_date_shift.items():
+                    # log_to_file(MONITORING_LOG, f"[ROTATION] Внутренний цикл: floor={floor}, date={date}, s_type={s_type}")
+                    if s_type != shift_type or date != self.date:
+                        continue
+                    if not name.startswith(floor):
+                        continue
+                    for values in all_rotations:
+                        # log_to_file(MONITORING_LOG, f"[ROTATION] Проверяю ротацию: {name} | floor={floor} | len(values)={len(values) if values else 0}")
+                        if not values or len(values) < 3:
+                            continue  # минимум floor row, header row, данные
+                        # Пропускаем первые две строки (этаж, заголовки)
+                        for row in values[2:]:
+                            if not row or not isinstance(row, list):
+                                continue
+                            # log_to_file(MONITORING_LOG, f"[ROTATION] Проверка строки: {row[0]}")
+                            if row[0].strip() == dealer:
+                                # log_to_file(MONITORING_LOG, f"[ROTATION] Найден дилер '{dealer}' на этаже '{floor}' в ротации '{name}'")
+                                assigned_floors.append(floor)
+                                schedule = []
+                                times = values[1][1:-1]  # header row, пропускаем Dealer Name и HOME
+                                for i, t in enumerate(times):
+                                    table = row[1 + i] if len(row) > 1 + i else ""
+                                    schedule.append({"time": t, "table": table})
+                                    # log_to_file(MONITORING_LOG, f"[ROTATION] {floor} {t}: {table}")
+                                rotation.append({"floor": floor, "schedule": schedule})
+                                # Определяем break_number по расписанию (поиск всех, где table содержит 'x', среди первых 6)
+                                for idx, slot in enumerate(schedule[:6]):
+                                    table_val = str(slot["table"]).strip().lower()
+                                    # log_to_file(MONITORING_LOG, f"[ROTATION] BREAK CHECK: idx={idx+1}, table={table_val}")
+                                    if 'x' in table_val:
+                                        if min_break_number is None or idx + 1 < min_break_number:
+                                            min_break_number = idx + 1
+                                        # log_to_file(MONITORING_LOG, f"[ROTATION] BREAK найден: break_number={idx + 1} (time={slot['time']}, table={slot['table']})")
+                                        break
+                                break
+            assigned_floors = list(dict.fromkeys(assigned_floors))
+            # log_to_file(MONITORING_LOG, f"[ROTATION] assigned_floors: {assigned_floors}")
+            # log_to_file(MONITORING_LOG, f"[ROTATION] rotation: {rotation}")
+            start = getattr(self, 'current_shift_start', None) or ("21:00" if shift_type == "Night" else "09:00")
+            end = getattr(self, 'current_shift_end', None) or ("09:00" if shift_type == "Night" else "21:00")
+            extra_flags = {
+                "is_scheduled": True,
+                "is_additional": False,
+                "is_extra": False,
+                "is_sickleave": False,
+                "is_vacation": False,
+                "is_did_not_come": False,
+                "is_left_the_shift": False
+            }
+            break_number = min_break_number if min_break_number is not None else 0
+            # log_to_file(MONITORING_LOG, f"[ROTATION] Итоговый break_number: {break_number}")
+            return {
+                "type": shift_type,
+                **extra_flags,
+                "start": start,
+                "end": end,
+                "assigned_floors": assigned_floors,
+                "rotation": rotation,
+                "break_number": break_number
+            }
+        except Exception as e:
+            # log_to_file(MONITORING_LOG, f"[ROTATION] Ошибка в _get_shift_info для дилера '{dealer}': {e}")
+            return {
+                "type": getattr(self, 'current_shift_type', None) or "Day",
+                "is_scheduled": True,
+                "is_additional": False,
+                "is_extra": False,
+                "is_sickleave": False,
+                "is_vacation": False,
+                "is_did_not_come": False,
+                "is_left_the_shift": False,
+                "start": getattr(self, 'current_shift_start', None) or ("21:00" if shift_type == "Night" else "09:00"),
+                "end": getattr(self, 'current_shift_end', None) or ("09:00" if shift_type == "Night" else "21:00"),
+                "assigned_floors": [],
+                "rotation": [],
+                "break_number": 0
+            }
 
     def _save(self, task):
-        entry = self.session.query(MonitoringStorage).filter_by(
-            dealer_name=task.dealer_name, report_date=task.report_date
-        ).first()
+        try:
+            entry = self.session.query(MonitoringStorage).filter_by(
+                dealer_name=task.dealer_name, report_date=task.report_date, shift_type=task.shift_type
+            ).first()
 
-        if entry:
-            entry.raw_data = task.raw_data
-            entry.dealer_nicknames = task.dealer_nicknames
-            entry.shift_type = task.shift_type
-            entry.shift_start = task.shift_start
-            entry.shift_end = task.shift_end
-            entry.break_number = task.break_number
-            entry.is_scheduled = task.is_scheduled
-            entry.is_additional = task.is_additional
-            entry.is_extra = task.is_extra
-            entry.is_sickleave = task.is_sickleave
-            entry.is_vacation = task.is_vacation
-            entry.is_did_not_come = task.is_did_not_come
-            entry.is_left_the_shift = task.is_left_the_shift
-            entry.assigned_floors = task.assigned_floors
-            entry.floor_permits = task.floor_permits
-            entry.game_permits = task.game_permits
-            entry.has_mistakes = task.has_mistakes
-            entry.has_feedbacks = task.has_feedbacks
-            entry.rotation = task.rotation
-            entry.mistakes = task.mistakes
-            entry.feedbacks = task.feedbacks
-        else:
-            entry = MonitoringStorage(
-                dealer_name=task.dealer_name,
-                dealer_nicknames=task.dealer_nicknames,
-                report_date=task.report_date,
-                shift_type=task.shift_type,
-                shift_start=task.shift_start,
-                shift_end=task.shift_end,
-                break_number=task.break_number,
-                is_scheduled=task.is_scheduled,
-                is_additional=task.is_additional,
-                is_extra=task.is_extra,
-                is_sickleave=task.is_sickleave,
-                is_vacation=task.is_vacation,
-                is_did_not_come=task.is_did_not_come,
-                is_left_the_shift=task.is_left_the_shift,
-                assigned_floors=task.assigned_floors,
-                floor_permits=task.floor_permits,
-                game_permits=task.game_permits,
-                has_mistakes=task.has_mistakes,
-                has_feedbacks=task.has_feedbacks,
-                rotation=task.rotation,
-                mistakes=task.mistakes,
-                feedbacks=task.feedbacks,
-                raw_data=task.raw_data
-            )
-            self.session.add(entry)
+            if entry:
+                entry.raw_data = task.raw_data
+                entry.dealer_nicknames = task.dealer_nicknames
+                entry.shift_type = task.shift_type
+                entry.shift_start = task.shift_start
+                entry.shift_end = task.shift_end
+                entry.break_number = task.break_number  # <-- сохраняем break_number
+                entry.is_scheduled = task.is_scheduled
+                entry.is_additional = task.is_additional
+                entry.is_extra = task.is_extra
+                entry.is_sickleave = task.is_sickleave
+                entry.is_vacation = task.is_vacation
+                entry.is_did_not_come = task.is_did_not_come
+                entry.is_left_the_shift = task.is_left_the_shift
+                entry.assigned_floors = task.assigned_floors
+                entry.floor_permits = task.floor_permits
+                entry.game_permits = task.game_permits
+                entry.has_mistakes = task.has_mistakes
+                entry.has_feedbacks = task.has_feedbacks
+                entry.rotation = task.rotation
+                entry.mistakes = task.mistakes
+                entry.feedbacks = task.feedbacks
+            else:
+                entry = MonitoringStorage(
+                    dealer_name=task.dealer_name,
+                    dealer_nicknames=task.dealer_nicknames,
+                    report_date=task.report_date,
+                    shift_type=task.shift_type,
+                    shift_start=task.shift_start,
+                    shift_end=task.shift_end,
+                    break_number=task.break_number,  # <-- сохраняем break_number
+                    is_scheduled=task.is_scheduled,
+                    is_additional=task.is_additional,
+                    is_extra=task.is_extra,
+                    is_sickleave=task.is_sickleave,
+                    is_vacation=task.is_vacation,
+                    is_did_not_come=task.is_did_not_come,
+                    is_left_the_shift=task.is_left_the_shift,
+                    assigned_floors=task.assigned_floors,
+                    floor_permits=task.floor_permits,
+                    game_permits=task.game_permits,
+                    has_mistakes=task.has_mistakes,
+                    has_feedbacks=task.has_feedbacks,
+                    rotation=task.rotation,
+                    mistakes=task.mistakes,
+                    feedbacks=task.feedbacks,
+                    raw_data=task.raw_data
+                )
+                self.session.add(entry)
 
-        self.session.commit()
+            self.session.commit()
+        except Exception as e:
+            log_to_file(MONITORING_LOG, f"⚠ Ошибка при сохранении MonitoringStorage: {e}")
 
     def scan_all_shifts_for_month(self):
         """
@@ -551,4 +592,4 @@ if __name__ == "__main__":
     scanner = MonitoringStorageScanner(session, monitoring_tokens, doc_id_map)
 
     scanner.scan_all_shifts_for_month()
-    print(f"Сканирование завершено: все смены с {scanner.date.replace(day=1)} по {scanner.date} (дата и shift для каждой записи сохранены в БД)")
+    # print(f"Сканирование завершено: все смены с {scanner.date.replace(day=1)} по {scanner.date} (дата и shift для каждой записи сохранены в БД)")

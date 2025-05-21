@@ -42,7 +42,7 @@ class MonitoringStorage(Base):
     raw_data = Column(JSONB, default={})
 
     __table_args__ = (
-        UniqueConstraint('dealer_name', 'report_date', name='uq_dealer_date'),
+        UniqueConstraint('dealer_name', 'report_date', 'shift_type', name='uq_dealer_date_shift'),
     )
 
 class ApiUsage(Base):
@@ -175,3 +175,12 @@ class FeedbackStatus(Base):
     __table_args__ = (
         UniqueConstraint('name_surname', name='uq_name_surname'),
     )
+
+class ScheduleOT(Base):
+    __tablename__ = 'ScheduleOT'
+
+    id = Column(Integer, primary_key=True)
+    date = Column(Date)
+    dealer_name = Column(Text)
+    shift_type = Column(Text)
+    related_month = Column(Date)
