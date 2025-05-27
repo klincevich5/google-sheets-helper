@@ -1,6 +1,7 @@
 # database/db_models.py
 
-from sqlalchemy import Column, Integer, String, Text, Boolean, Date, Time, DateTime, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Text, Boolean, Date, Time, DateTime, UniqueConstraint, Enum, BigInteger
+import enum
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY as PG_ARRAY
 
@@ -68,6 +69,7 @@ class FeedbackStorage(Base):
     __tablename__ = 'FeedbackStorage'
 
     id = Column(Integer, primary_key=True)
+    related_month = Column(Date)
     date = Column(Date)
     shift = Column(Text)
     floor = Column(Text)
@@ -87,6 +89,7 @@ class MistakeStorage(Base):
     __tablename__ = 'MistakeStorage'
 
     id = Column(Integer, primary_key=True)
+    related_month = Column(Date)
     floor = Column(Text)
     table_name = Column(Text)
     date = Column(Date)
@@ -184,3 +187,24 @@ class ScheduleOT(Base):
     dealer_name = Column(Text)
     shift_type = Column(Text)
     related_month = Column(Date)
+
+    
+class UserRole(enum.Enum):
+    Shuffler = "Shuffler"
+    Dealer = "Dealer"
+    Manager = "Manager"
+    QA_Manager = "QA Manager"
+    HR_Manager = "HR Manager"
+    Chief_SM_Manager = "Chief SM Manager"
+    Trainer_Manager = "Trainer Manager"
+    Floor_Manager = "Floor Manager"
+    Admin = "Admin"
+    Super_Admin = "Super Admin"
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True)
+    telegram_id = Column(BigInteger, unique=True, nullable=False)
+    full_name = Column(String, nullable=False)
+    role = Column(Enum(UserRole), nullable=False)

@@ -33,7 +33,7 @@ SHEETINFO_INTERVAL = int(os.getenv("SHEETINFO_INTERVAL", 300))
 ROTATIONSINFO_INTERVAL = int(os.getenv("ROTATIONSINFO_INTERVAL", 60))
 
 # --- sqalchemy ---
-SQLALCHEMY_DATABASE_URL = os.getenv("SQLALCHEMY_DATABASE_URL", "postgresql+psycopg://postgres:qweqwe@localhost/scheduler")
+SQLALCHEMY_DATABASE_URL = os.getenv("SQLALCHEMY_DATABASE_URL", "postgresql+psycopg2://postgres:qweqwe@localhost:5432/scheduler")
 
 # --- Deviding by floors ---
 FLOORS = json.loads(os.getenv("FLOORS", "{}"))

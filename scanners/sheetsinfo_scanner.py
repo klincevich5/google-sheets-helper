@@ -58,7 +58,7 @@ class SheetsInfoScanner:
 
                 try:
 
-                    self.token_name, token_path = manager.select_best_token(self.log_file)
+                    self.token_name, token_path = manager.select_best_token(self.log_file, self.session)
                     log_to_file(self.log_file, f"🔑 Выбран {self.token_name}")
                     self.service = load_credentials(token_path, self.log_file, self.session)
                     log_to_file(self.log_file, f"🔐 Используется токен: {self.token_name}")

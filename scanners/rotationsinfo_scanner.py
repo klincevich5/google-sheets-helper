@@ -54,8 +54,8 @@ class RotationsInfoScanner:
 
                 try:
 
-                    self.token_name, token_path = manager.select_best_token(self.log_file)
-                    log_to_file(self.log_file, f"🔑 Выбран {self.token_name}")
+                    self.token_name, token_path = manager.select_best_token(self.log_file, self.session)
+                    log_to_file(self.log_file, f"🔑 Выбран {self.token_name} with token_path {token_path}")
                     self.service = load_credentials(token_path, self.log_file, self.session)
                     log_to_file(self.log_file, f"🔐 Используется токен: {self.token_name}")
                 except Exception as e:

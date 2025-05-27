@@ -1,13 +1,44 @@
 import time
 import os
+import json
 
 from googleapiclient.errors import HttpError
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+from datetime import datetime, timedelta
+from core.config import TIMEZONE
+from zoneinfo import ZoneInfo
 
 from utils.logger import log_to_file
 from utils.db_orm import insert_usage
+
+try:
+    timezone = ZoneInfo(TIMEZONE)
+except Exception as e:
+    raise ValueError(f"Некорректное значение TIMEZONE: {TIMEZONE}. Ошибка: {e}")
+
+def get_current_shift_and_date(now: datetime = None) -> tuple[str, datetime.date]:
+    """
+    Определяет актуальный тип смены и корректную дату смены.
+
+    Возвращает:
+        ("day"/"night", date) — где date может быть вчера, если ночь после полуночи
+    """
+    if now is None:
+        now = datetime.now(timezone)
+
+    hour = now.hour
+
+    if 9 <= hour < 21:
+        return "day", now.date()
+    else:
+        # Ночная смена
+        if hour < 9:  # 00:00–08:59 — считается ночной сменой предыдущего дня
+            shift_date = (now - timedelta(days=1)).date()
+        else:  # 21:00–23:59 — ночь текущего дня
+            shift_date = now.date()
+        return "night", shift_date
 
 ##################################################################################
 # Авторизация
@@ -21,7 +52,16 @@ def load_credentials(token_path, log_file, session):
     success = False
 
     try:
-        creds = Credentials.from_authorized_user_file(token_path)
+        with open(token_path, encoding="utf-8") as f:
+            token = json.load(f)
+        creds = Credentials(
+            token=token["access_token"],
+            refresh_token=token.get("refresh_token"),
+            token_uri=token["token_uri"],
+            client_id=token["client_id"],
+            client_secret=token["client_secret"],
+            scopes=token.get("scopes", ["https://www.googleapis.com/auth/spreadsheets"])
+        )
 
         if creds.expired and creds.refresh_token:
             try:

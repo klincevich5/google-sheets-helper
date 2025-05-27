@@ -3,7 +3,6 @@
 from datetime import date, datetime, timedelta
 from sqlalchemy.orm import Session
 from core.config import THRESHOLD
-from database.session import SessionLocal
 from database.db_models import ApiUsage
 from utils.logger import log_to_file
 
@@ -35,12 +34,11 @@ class TokenManager:
         return sum(r[0] for r in results if r[0])
 
 
-    def select_best_token(self, log_file: str) -> tuple[str, str]:
-        with SessionLocal() as session:
-            usage_data = {
-                name: self.get_usage(session, name)
-                for name in self.token_map.keys()
-            }
+    def select_best_token(self, log_file: str, session: Session) -> tuple[str, str]:
+        usage_data = {
+            name: self.get_usage(session, name)
+            for name in self.token_map.keys()
+        }
 
         for name, used in usage_data.items():
             log_to_file(log_file, f"🔍 {name} использован: {used}/10000")
