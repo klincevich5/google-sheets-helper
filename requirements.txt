@@ -1,14 +1,28 @@
 # requirements.txt
 
 aiogram==3.1.1
+aiohttp==3.8.6
+alembic==1.14.1
+SQLAlchemy==2.0.21
+psycopg2-binary==2.9.6
 python-dotenv==1.0.0
+pydantic==2.3.0
+
 google-api-python-client==2.92.0
 google-auth==2.23.4
-google-auth-oauthlib==1.0.0
-tzdata==2023.3
-aiohttp==3.6.2
-pathlib==1.0.1
 google-auth-httplib2==0.1.0
-pandas==2.1.1
-sqlalchemy==2.0.20
-postgresql==1.0.2
+google-auth-oauthlib==1.0.0
+google-api-core==2.25.0rc0
+google-cloud-monitoring==2.27.1
+googleapis-common-protos==1.70.0
+httplib2==0.22.0
+uritemplate==4.1.1
+protobuf==5.29.4
+proto-plus==1.26.1
+rsa==4.9.1
+cachetools==5.5.2
+
+pytz==2023.3
+tabulate==0.9.0
+tzdata==2023.3
+python-dotenv==1.0.0

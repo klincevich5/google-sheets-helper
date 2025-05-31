@@ -7,8 +7,8 @@ import signal
 import sys
 
 from bot.settings_access import is_scanner_enabled
-from tg_bot.bot import setup_bot
-from tg_bot.router import register_routers
+# from tg_bot.bot import setup_bot
+# from tg_bot.router import register_routers
 from utils.logger import log_to_file
 
 from core.config import (
@@ -98,9 +98,9 @@ async def main():
     doc_id_map = return_tracked_tables(session)
 
     # Инициализация бота
-    dp, bot = setup_bot()
-    register_routers(dp)
-    bot_task = asyncio.create_task(dp.start_polling(bot))
+    # dp, bot = setup_bot()
+    # register_routers(dp)
+    # bot_task = asyncio.create_task(dp.start_polling(bot))
 
     # Сканнеры
     if is_scanner_enabled("rotations_scanner"):
@@ -123,8 +123,8 @@ async def main():
             await asyncio.sleep(1)
     finally:
         print("⛔ Остановка Telegram-бота...")
-        await bot.session.close()
-        bot_task.cancel()
+        # await bot.session.close()
+        # bot_task.cancel()
 
 
 if __name__ == "__main__":
