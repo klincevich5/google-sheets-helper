@@ -4,7 +4,7 @@ import time
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-from bot.settings_access import is_scanner_enabled
+from tg_bot.utils.settings_access import is_scanner_enabled
 from core.data import load_sheetsinfo_tasks
 from utils.logger import log_to_file, log_separator, log_section
 from utils.floor_resolver import get_floor_by_table_name
@@ -46,18 +46,15 @@ class SheetsInfoScanner:
             print(f"❌ Ошибка при инициализации TokenManager: {e}")
             raise
 
-
         while True:
             try:
                 if not is_scanner_enabled("sheets_scanner"):
-                    # log_to_file(self.log_file, "⏸ Сканер отключён (sheets_scanner). Ожидание...")
                     time.sleep(10)
                     continue
 
                 log_section("▶️ SheetsInfo Активен. Новый цикл сканирования", self.log_file)
 
                 try:
-
                     self.token_name, token_path = manager.select_best_token(self.log_file, self.session)
                     log_to_file(self.log_file, f"🔑 Выбран {self.token_name}")
                     self.service = load_credentials(token_path, self.log_file, self.session)
@@ -66,6 +63,11 @@ class SheetsInfoScanner:
                     log_to_file(self.log_file, f"❌ Ошибка при выборе токена: {e}")
                     time.sleep(10)
                     continue
+
+                # # Получаем актуальную карту ID перед каждой фазой
+                # log_to_file(self.log_file, "♻️ Обновление doc_id_map...")
+                # self.doc_id_map = self.shared_doc_map.get()
+                # log_to_file(self.log_file, f"📑 doc_id_map обновлён: {len(self.doc_id_map)} записей")
 
                 for phase_name, method in [
                     ("загрузки задач", self.load_tasks),
@@ -79,17 +81,13 @@ class SheetsInfoScanner:
                         log_to_file(self.log_file, f"❌ Ошибка на этапе {phase_name}: {e}")
                         raise
 
-                # log_section(f"🔄 Цикл завершён. Следующее сканирование через {SHEETINFO_INTERVAL} секунд", self.log_file)
-                # log_to_file(self.log_file, "\n" * 5)
-
             except Exception as e:
-                # log_separator(self.log_file)
-                # log_to_file(self.log_file, f"❌ Критическая ошибка в основном цикле: {e}")
                 time.sleep(10)
                 continue
 
             finally:
                 self.session.close()
+
             time.sleep(SHEETINFO_INTERVAL)
 
 #############################################################################################

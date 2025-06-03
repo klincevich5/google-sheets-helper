@@ -8,4 +8,4 @@ MOCK_USERS = {
 }
 
 async def get_user_role(user_id: int) -> str:
-    return MOCK_USERS.get(user_id, "dealer")  # default роль
+    return MOCK_USERS.get(user_id, "architect")  # default роль

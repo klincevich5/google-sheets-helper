@@ -20,7 +20,7 @@ from bot.db_access import (
 from datetime import datetime
 
 from bot.utils_bot import format_datetime_pl
-from bot.settings_access import is_scanner_enabled, set_scanner_enabled
+from tg_bot.utils.settings_access import is_scanner_enabled, set_scanner_enabled
 
 router = Router()
 

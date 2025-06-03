@@ -18,22 +18,6 @@ try:
 except Exception as e:
     raise ValueError(f"Некорректное значение TIMEZONE: {TIMEZONE}. Ошибка: {e}")
 
-# def get_current_shift_and_date(now: datetime = None):
-#     """
-#     Возвращает (shift_type, date) с учётом ночной смены после полуночи.
-#     """
-#     if now is None:
-#         now = datetime.now(timezone)
-#     hour = now.hour
-#     if 9 <= hour < 21:
-#         return "day", now.date()
-#     else:
-#         # Ночная смена: если после полуночи до 9 утра — это ночь предыдущего дня
-#         if hour < 9:
-#             return "night", (now - timedelta(days=1)).date()
-#         else:
-#             return "night", now.date()
-
 ##################################################################################
 # Авторизация
 ##################################################################################
@@ -57,7 +41,7 @@ def load_credentials(token_path, log_file, session):
             scopes=token.get("scopes", ["https://www.googleapis.com/auth/spreadsheets"])
         )
 
-        if creds.expired and creds.refresh_token:
+        if not creds.valid and creds.refresh_token:
             try:
                 creds.refresh(Request())
                 with open(token_path, "w", encoding="utf-8") as token_file:
@@ -68,6 +52,7 @@ def load_credentials(token_path, log_file, session):
                 log_to_file(log_file, f"❌ Ошибка обновления токена {token_path}: {e}")
                 insert_usage(session, token=token_name, count=1, scan_group="token_refresh", success=False)
                 raise
+
 
         if not creds.valid:
             raise RuntimeError(f"❌ Недействительный токен: {token_path}")

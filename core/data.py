@@ -20,6 +20,8 @@ def return_tracked_tables(session: Session) -> dict:
     Получение карты соответствия table_type -> spreadsheet_id из таблицы TrackedTables,
     с учётом даты действия (valid_from, valid_to).
     """
+
+
     actual_date_now = datetime.now(timezone).date()
     print(f"📅 Сегодня: {actual_date_now}")
 
@@ -28,6 +30,7 @@ def return_tracked_tables(session: Session) -> dict:
     for table in tables:
         if table.valid_from <= actual_date_now <= table.valid_to:
             doc_id_map[table.table_type] = table.spreadsheet_id
+        
     
     return doc_id_map
 

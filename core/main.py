@@ -6,9 +6,8 @@ import asyncio
 import signal
 import sys
 
-from bot.settings_access import is_scanner_enabled
-# from tg_bot.bot import setup_bot
-# from tg_bot.router import register_routers
+from tg_bot.utils.settings_access import is_scanner_enabled
+from tg_bot.main import main as telegram_main
 from utils.logger import log_to_file
 
 from core.config import (
@@ -40,6 +39,9 @@ sheet_tokens = {
 stop_event = threading.Event()
 scanner_threads = []
 
+# 🧠 Запуск Telegram-бота в отдельном потоке
+def run_bot():
+    asyncio.run(telegram_main())  # отдельно от основного цикла
 
 # 🚦 Сканнеры
 def start_rotations_scanner(rotation_tokens, doc_id_map):
@@ -74,7 +76,6 @@ def start_monitoring_scanner(monitoring_tokens, doc_id_map):
             log_to_file(MAIN_LOG, f"❌ Ошибка в MonitoringStorageScanner: {e}")
             time.sleep(5)
 
-
 # 🛑 Завершение
 def signal_handler(sig, frame):
     print("\n🛑 Получен сигнал остановки. Завершение работы...")
@@ -88,8 +89,6 @@ def signal_handler(sig, frame):
 # 🚀 Основной асинхронный запуск
 async def main():
     print("🚀 Инициализация...")
-
-    # Сигналы завершения
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
@@ -97,10 +96,9 @@ async def main():
     session = SessionLocal()
     doc_id_map = return_tracked_tables(session)
 
-    # Инициализация бота
-    # dp, bot = setup_bot()
-    # register_routers(dp)
-    # bot_task = asyncio.create_task(dp.start_polling(bot))
+    t = threading.Thread(target=run_bot, daemon=True)
+    t.start()
+    scanner_threads.append(t)
 
     # Сканнеры
     if is_scanner_enabled("rotations_scanner"):
@@ -120,11 +118,12 @@ async def main():
 
     try:
         while not stop_event.is_set():
-            await asyncio.sleep(1)
+            time.sleep(1)
     finally:
-        print("⛔ Остановка Telegram-бота...")
-        # await bot.session.close()
-        # bot_task.cancel()
+        print("⛔ Остановка всех потоков...")
+        log_to_file(MAIN_LOG, "🛑 Скрипт остановлен.")
+        for t in scanner_threads:
+            t.join(timeout=2)
 
 
 if __name__ == "__main__":

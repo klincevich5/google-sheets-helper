@@ -17,6 +17,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Импорт моделей
+from google_sheets_helper.database.db_models import Base
 target_metadata = Base.metadata
 
 # Установка строки подключения из .env

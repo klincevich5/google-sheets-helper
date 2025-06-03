@@ -32,7 +32,7 @@ GAME_PERMITS_TO_TABLE={"BJ": ["vBJ2", "vBJ3", "gBJ1", "gBJ3", "gBJ4", "gBJ5", "g
       "GSBJ": False,
       "TURKISH": False,
       "LEGENDZ": False,
-      "TRISTAR": False,
+      "TRI-STAR": False,
       "TRITON": False
     },
     "games": {

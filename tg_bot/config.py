@@ -1,2 +1,2 @@
-BOT_TOKEN = "your_bot_token_here"
-TIMEZONE = "Europe/Moscow"
+BOT_TOKEN="5751616265:AAH90gsteDwh1W4OCI99RBv2Q_D6MzbvKPI"
+TIMEZONE="Europe/Warsaw"

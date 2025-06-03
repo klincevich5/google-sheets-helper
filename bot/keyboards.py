@@ -1,7 +1,7 @@
 # bot/keyboards.py
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from bot.settings_access import is_scanner_enabled
+from tg_bot.utils.settings_access import is_scanner_enabled
 
 def main_menu_kb():
     buttons = [[

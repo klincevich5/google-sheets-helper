@@ -49,7 +49,7 @@ def process_permits(values: List[List], source_page_area = None) -> List[List]:
             row += [""] * (20 - len(row))
 
         col_1 = row[0]
-        cols_10_19 = row[9:19]
+        cols_10_19 = row[9:20] # 19+gsDT1
         result.append([col_1] + cols_10_19)
     return result
 

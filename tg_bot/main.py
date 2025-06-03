@@ -1,16 +1,19 @@
+# tg_bot.main.py
+
 import asyncio
-from bot import bot, dp
-from handlers import (
+from tg_bot.bot import bot, dp
+from tg_bot.handlers import (
     common, viewing_shift, calendar_navigation,
-    dealer, service_manager, architect, common_callbacks
+    common_callbacks
 )
+from tg_bot.handlers import architect, dealer, service_manager
 
 async def main():
     # Подключаем роутеры
     dp.include_routers(
-        common.router,
-        viewing_shift.router,
-        calendar_navigation.router,
+        common,  # Исправлено: теперь просто common, а не common.router
+        viewing_shift,
+        calendar_navigation,
 
         # дилер
         dealer.feedback.router,
@@ -20,15 +23,16 @@ async def main():
         service_manager.feedback.router,
         service_manager.reports.router,
         service_manager.team.router,
+        service_manager.rotations.router,
 
         # архитектор
         architect.tasks.router,
 
         # общие callback-и
-        common_callbacks.router,
+        common_callbacks,
     )
 
-    await dp.start_polling(bot)
+    await dp.start_polling(bot, handle_signals=False)
 
 if __name__ == "__main__":
     asyncio.run(main())

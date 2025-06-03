@@ -1,3 +1,5 @@
+# handlers/service_manager/team.py
+
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -9,7 +11,8 @@ router = Router()
 
 # 🔹 Список дилеров
 @router.callback_query(F.data == "view_dealers_list")
-async def view_dealers_list(callback: CallbackQuery, state: FSMContext):
+async def view_dealers_list(callback: CallbackQuery, state: FSMContext, bot):
+    print("[service_manager/team] view_dealers_list")
     try:
         await push_state(state, ShiftNavigationState.VIEW_DEALERS_LIST)
         await state.set_state(ShiftNavigationState.VIEW_DEALERS_LIST)
@@ -24,6 +27,7 @@ async def view_dealers_list(callback: CallbackQuery, state: FSMContext):
         kb = InlineKeyboardBuilder()
         for user_id, name in dealers:
             kb.button(text=f"👤 {name}", callback_data=f"dealer:{user_id}")
+        # Кнопка возврата на дашборд
         kb.button(text="🔙 Back", callback_data="return_shift")
         kb.adjust(1)
 
@@ -37,6 +41,7 @@ async def view_dealers_list(callback: CallbackQuery, state: FSMContext):
 # 🔹 Просмотр дилера
 @router.callback_query(F.data.startswith("dealer:"))
 async def view_dealer(callback: CallbackQuery, state: FSMContext):
+    print("[service_manager/team] view_dealer")
     try:
         await push_state(state, ShiftNavigationState.VIEW_EMPLOYEE)
         await state.set_state(ShiftNavigationState.VIEW_EMPLOYEE)
@@ -49,6 +54,7 @@ async def view_dealer(callback: CallbackQuery, state: FSMContext):
         kb = InlineKeyboardBuilder()
         kb.button(text="💬 Feedbacks", callback_data="dealer_feedbacks")
         kb.button(text="⚠️ Mistakes", callback_data="dealer_mistakes")
+        # Кнопка возврата к списку дилеров
         kb.button(text="🔙 Back", callback_data="view_dealers_list")
         kb.adjust(1)
 
@@ -63,6 +69,7 @@ async def view_dealer(callback: CallbackQuery, state: FSMContext):
 # 🔹 Фидбеки по дилеру
 @router.callback_query(F.data == "dealer_feedbacks")
 async def view_dealer_feedbacks(callback: CallbackQuery, state: FSMContext):
+    print("[service_manager/team] view_dealer_feedbacks")
     try:
         await push_state(state, ShiftNavigationState.VIEW_DEALER_FEEDBACKS)
         await state.set_state(ShiftNavigationState.VIEW_DEALER_FEEDBACKS)
@@ -76,6 +83,7 @@ async def view_dealer_feedbacks(callback: CallbackQuery, state: FSMContext):
         )
 
         kb = InlineKeyboardBuilder()
+        # Кнопка возврата к карточке дилера
         kb.button(text="🔙 Back", callback_data=f"dealer:{user_id}")
         kb.adjust(1)
 
@@ -90,6 +98,7 @@ async def view_dealer_feedbacks(callback: CallbackQuery, state: FSMContext):
 # 🔹 Ошибки по дилеру
 @router.callback_query(F.data == "dealer_mistakes")
 async def view_dealer_mistakes(callback: CallbackQuery, state: FSMContext):
+    print("[service_manager/team] view_dealer_mistakes")
     try:
         await push_state(state, ShiftNavigationState.VIEW_DEALER_MISTAKES)
         await state.set_state(ShiftNavigationState.VIEW_DEALER_MISTAKES)
@@ -103,6 +112,7 @@ async def view_dealer_mistakes(callback: CallbackQuery, state: FSMContext):
         )
 
         kb = InlineKeyboardBuilder()
+        # Кнопка возврата к карточке дилера
         kb.button(text="🔙 Back", callback_data=f"dealer:{user_id}")
         kb.adjust(1)
 
@@ -113,3 +123,8 @@ async def view_dealer_mistakes(callback: CallbackQuery, state: FSMContext):
         )
     except Exception:
         await callback.answer("Произошла ошибка!", show_alert=True)
+
+@router.callback_query(F.data == "return_shift")
+async def proxy_return_shift(callback: CallbackQuery, state: FSMContext, bot):
+    from tg_bot.handlers.common_callbacks import return_to_dashboard
+    await return_to_dashboard(callback, state, bot)
