@@ -410,8 +410,7 @@ class RotationsInfoScanner:
                             batch_data=batch_data,
                             token_name=self.token_name,
                             update_group=reference_task.update_group,
-                            log_file=self.log_file,
-                            session=session
+                            log_file=self.log_file
                         )
                     except Exception as e:
                         success, error = False, str(e)

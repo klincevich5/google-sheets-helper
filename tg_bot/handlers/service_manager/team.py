@@ -9,34 +9,6 @@ from tg_bot.handlers.common_callbacks import push_state
 
 router = Router()
 
-# 🔹 Список дилеров
-@router.callback_query(F.data == "view_dealers_list")
-async def view_dealers_list(callback: CallbackQuery, state: FSMContext, bot):
-    print("[service_manager/team] view_dealers_list")
-    try:
-        await push_state(state, ShiftNavigationState.VIEW_DEALERS_LIST)
-        await state.set_state(ShiftNavigationState.VIEW_DEALERS_LIST)
-
-        # Мок-дилеры
-        dealers = [
-            ("anna", "Anna"),
-            ("pavel", "Pavel"),
-            ("ivan", "Ivan")
-        ]
-
-        kb = InlineKeyboardBuilder()
-        for user_id, name in dealers:
-            kb.button(text=f"👤 {name}", callback_data=f"dealer:{user_id}")
-        # Кнопка возврата на дашборд
-        kb.button(text="🔙 Back", callback_data="return_shift")
-        kb.adjust(1)
-
-        await callback.message.edit_text(
-            text="👥 Select a dealer to view:",
-            reply_markup=kb.as_markup()
-        )
-    except Exception:
-        await callback.answer("Произошла ошибка!", show_alert=True)
 
 # 🔹 Просмотр дилера
 @router.callback_query(F.data.startswith("dealer:"))

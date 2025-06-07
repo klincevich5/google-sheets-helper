@@ -23,6 +23,7 @@ async def main():
         service_manager.feedback.router,
         service_manager.reports.router,
         service_manager.team.router,
+        service_manager.dealers_list.router,
         service_manager.rotations.router,
 
         # архитектор

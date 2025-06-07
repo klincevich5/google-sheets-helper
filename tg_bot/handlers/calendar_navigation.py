@@ -89,11 +89,17 @@ async def open_calendar(callback: CallbackQuery, state: FSMContext, bot: Bot):
         await state.update_data(calendar_year=now.year, calendar_month=now.month)
 
         current_shift_type, current_date = get_current_shift_and_date(datetime.now(timezone))
+
+        # Формируем текст с защитой от None
+        selected_text = (
+            f"{selected_date.strftime('%d %b %Y')}" if selected_date else "not selected"
+        )
+
         header = (
             "📅 Select a date\n"
             f"Current shift: <b>{current_date.strftime('%d %b %Y')} — "
             f"{'🌞 Day' if current_shift_type == 'day' else '🌙 Night'} shift</b>\n"
-            f"Selected: <b>{selected_date.strftime('%d %b %Y')}</b>"
+            f"Selected: <b>{selected_text}</b>"
         )
 
         await safe_edit_or_send(callback, bot, header, builder.as_markup(), state)
@@ -101,6 +107,7 @@ async def open_calendar(callback: CallbackQuery, state: FSMContext, bot: Bot):
     except Exception as e:
         print(f"[calendar_navigation] open_calendar exception: {e}")
         await callback.answer("Произошла ошибка!", show_alert=True)
+
 
 @router.callback_query(F.data.startswith("prev_month"))
 async def prev_month(callback: CallbackQuery, state: FSMContext, bot: Bot):

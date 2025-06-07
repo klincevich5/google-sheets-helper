@@ -22,7 +22,7 @@ from tg_bot.services.db import get_user_role
 
 from tg_bot.handlers.architect.tasks import view_tasks
 from tg_bot.handlers.service_manager.reports import select_report
-from tg_bot.handlers.service_manager.team import view_dealers_list
+from tg_bot.handlers.service_manager.dealers_list import view_dealers_list
 from tg_bot.handlers.service_manager.feedback import view_feedbacks, view_mistakes
 from tg_bot.handlers.service_manager.rotations import select_rotation
 from tg_bot.handlers.common_callbacks import contact_info
@@ -107,9 +107,21 @@ async def render_shift_dashboard(msg_or_cb: Message | CallbackQuery, state: FSMC
     user_id = data.get("user_id") or msg_or_cb.from_user.id
     chat_id = msg_or_cb.chat.id if isinstance(msg_or_cb, Message) else msg_or_cb.message.chat.id
 
-    role = await get_user_role(user_id)
+    # ⚠️ Подстраховка, если нет даты или типа смены
     selected_date = data.get("selected_date")
     selected_shift_type = data.get("selected_shift_type")
+
+    if selected_date is None or selected_shift_type is None:
+        now = datetime.now()
+        current_shift_type, current_date = get_current_shift_and_date(now)
+        selected_date = selected_date or current_date
+        selected_shift_type = selected_shift_type or current_shift_type
+        await state.update_data(
+            selected_date=selected_date,
+            selected_shift_type=selected_shift_type
+        )
+
+    role = await get_user_role(user_id)
 
     if role == "dealer":
         text = await get_dealer_main_view(user_id, selected_date, selected_shift_type)
@@ -128,7 +140,6 @@ async def render_shift_dashboard(msg_or_cb: Message | CallbackQuery, state: FSMC
         if isinstance(msg_or_cb, CallbackQuery):
             await msg_or_cb.answer()
 
-            # ⚠️ Защита: если контент не меняется — не редактируем
             current_text = msg_or_cb.message.text or msg_or_cb.message.caption
 
             def markup_equal(m1, m2):
