@@ -22,7 +22,7 @@ except Exception as e:
 # Авторизация
 ##################################################################################
 
-def load_credentials(token_path, log_file, session):
+def load_credentials(token_path, log_file):
     if not os.path.exists(token_path):
         raise FileNotFoundError(f"❌ Файл токена не найден: {token_path}")
 
@@ -47,11 +47,10 @@ def load_credentials(token_path, log_file, session):
             with open(token_path, "w", encoding="utf-8") as token_file:
                 token_file.write(creds.to_json())
             log_to_file(log_file, f"🔄 Токен обновлён: {token_path}")
-            # insert_usage(session, token=token_name, count=1, scan_group="token_refresh", success=True)
+            
         except Exception as e:
             log_to_file(log_file, f"❌ Ошибка обновления токена {token_path}: {e}")
-            # insert_usage(session, token=token_name, count=1, scan_group="token_refresh", success=False)
-            raise
+        raise
 
 
     if not creds.valid:
@@ -62,14 +61,11 @@ def load_credentials(token_path, log_file, session):
     success = True
     return service
 
-    # finally:
-    #     insert_usage(session, token=token_name, count=1, scan_group="load_credentials", success=success)
-
 ##################################################################################
 # Проверка существования листа
 ##################################################################################
 
-def check_sheet_exists(service, spreadsheet_id, sheet_name, log_file, token_name, session):
+def check_sheet_exists(service, spreadsheet_id, sheet_name, log_file, token_name):
     success = False
     try:
         metadata = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
@@ -87,13 +83,12 @@ def check_sheet_exists(service, spreadsheet_id, sheet_name, log_file, token_name
 
     finally:
         token_name = os.path.basename(token_name).replace("_token.json", "")
-        # insert_usage(session, token=token_name, count=1, scan_group="check_sheet", success=success)
-
+ 
 ##################################################################################
 # Получение данных из Google Sheets
 ##################################################################################
 
-def batch_get(service, spreadsheet_id, ranges, scan_group, log_file, token_name, session, retries=5, delay_seconds=5):
+def batch_get(service, spreadsheet_id, ranges, scan_group, log_file, token_name, retries=5, delay_seconds=5):
     attempt = 0
     success = False
     data = {}
@@ -137,21 +132,13 @@ def batch_get(service, spreadsheet_id, ranges, scan_group, log_file, token_name,
                 log_to_file(log_file, f"❌ Ошибка batchGet: {e}")
                 break
 
-    # insert_usage(
-    #     session,
-    #     token=os.path.basename(token_name).replace("_token.json", ""),
-    #     count=attempt + 1,
-    #     scan_group=scan_group,
-    #     success=success
-    # )
-
     return data if success else {}
 
 ##################################################################################
 # Обновление данных в Google Sheets
 ##################################################################################
 
-def batch_update(service, spreadsheet_id, batch_data, token_name, update_group, log_file, session, retries=3, delay_seconds=10):
+def batch_update(service, spreadsheet_id, batch_data, token_name, update_group, log_file, retries=3, delay_seconds=10):
     success = False
     attempt = 0
 
@@ -201,12 +188,5 @@ def batch_update(service, spreadsheet_id, batch_data, token_name, update_group, 
         except Exception as e:
             log_to_file(log_file, f"❌ Ошибка batchUpdate: {e}")
             break
-
-    # insert_usage(session,
-    #              token=token_name,
-    #              count=attempt + 1,
-    #              update_group=update_group,
-    #              success=success
-    # )
     
     return (True, None) if success else (False, "Превышено число попыток" if attempt == retries else "Ошибка запроса")

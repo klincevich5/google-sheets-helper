@@ -8,6 +8,7 @@ from core.data import load_rotationsinfo_tasks
 from utils.logger import log_to_file, log_separator, log_section
 from utils.formatting_utils import format_sheet
 # from core.token_manager import TokenManager
+from database.session import SessionLocal
 
 from core.config import (
     ROTATIONSINFO_LOG,
@@ -27,64 +28,44 @@ from utils.utils import (
 )
 
 class RotationsInfoScanner:
-    def __init__(self, session, token_map, doc_id_map):
-        self.session = session
+    def __init__(self, token_map, doc_id_map):
         self.token_map = token_map
         self.doc_id_map = doc_id_map
         self.log_file = ROTATIONSINFO_LOG
         self.tasks = []
 
     def run(self):
-        # try:
-        #     manager = TokenManager(self.token_map)
-        # except Exception as e:
-        #     print(f"❌ Ошибка при инициализации TokenManager: {e}")
-        #     raise
-
         while True:
             try:
                 if not is_scanner_enabled("rotations_scanner"):
                     time.sleep(10)
                     continue
-                
+
                 log_section("▶️ RotationsInfo Активен. Новый цикл сканирования", self.log_file)
 
-                try:
-                    token_name = list(self.token_map.keys())[0]
-                    token_path = self.token_map[token_name]
-                    self.token_name = token_name
+                token_name = list(self.token_map.keys())[0]
+                token_path = self.token_map[token_name]
+                self.token_name = token_name
 
-                    self.service = load_credentials(token_path, self.log_file, self.session)
+                with SessionLocal() as session:
+                    self.service = load_credentials(token_path, self.log_file)
                     log_to_file(self.log_file, f"🔐 Используется токен: {self.token_name}")
-                except Exception as e:
-                    log_to_file(self.log_file, f"❌ Ошибка при выборе токена: {e}")
-                    time.sleep(10)
-                    continue
 
-                # # Получаем актуальный doc_id_map перед каждой фазой
-                # log_to_file(self.log_file, "♻️ Обновление doc_id_map...")
-                # self.doc_id_map = self.shared_doc_map.get()
-                # log_to_file(self.log_file, f"📑 doc_id_map обновлён: {len(self.doc_id_map)} записей")
-
-                for phase_name, method in [
-                    ("загрузки задач", self.load_tasks),
-                    ("сканирования", self.scan_phase),
-                    ("обработки", self.process_phase),
-                    ("обновления", self.update_phase)
-                ]:
-                    try:
-                        method()
-                    except Exception as e:
-                        log_to_file(self.log_file, f"❌ Ошибка на этапе {phase_name}: {e}")
-                        raise
+                    for phase_name, method in [
+                        ("загрузки задач", lambda: self.load_tasks(session)),
+                        ("сканирования", lambda: self.scan_phase(session)),
+                        ("обработки", lambda: self.process_phase(session)),
+                        ("обновления", lambda: self.update_phase(session)),
+                    ]:
+                        try:
+                            method()
+                        except Exception as e:
+                            log_to_file(self.log_file, f"❌ Ошибка на этапе {phase_name}: {e}")
+                            raise
 
             except Exception as e:
                 log_to_file(self.log_file, f"❌ Критическая ошибка в основном цикле: {e}")
                 time.sleep(10)
-                continue
-
-            finally:
-                self.session.close()
 
             time.sleep(ROTATIONSINFO_INTERVAL)
 
@@ -92,10 +73,10 @@ class RotationsInfoScanner:
 # загрузка задач из БД
 #############################################################################################
 
-    def load_tasks(self):
+    def load_tasks(self, session):
         # log_section("📥 Загрузка задач из RotationsInfo", self.log_file)
 
-        self.tasks = load_rotationsinfo_tasks(self.session, self.log_file)
+        self.tasks = load_rotationsinfo_tasks(session, self.log_file)
 
         if not self.tasks:
             # log_to_file(self.log_file, "⚪ Нет активных задач для сканирования.")
@@ -117,7 +98,7 @@ class RotationsInfoScanner:
 # Фаза сканирования
 #############################################################################################
 
-    def scan_phase(self):
+    def scan_phase(self, session):
         # log_section("🔍 Фаза сканирования", self.log_file)
 
         if not self.tasks:
@@ -151,7 +132,7 @@ class RotationsInfoScanner:
             # log_to_file(self.log_file, f"Уникальные названия листов: {unique_sheet_names}")
 
             exists_map = {
-                sheet_name: check_sheet_exists(self.service, doc_id, sheet_name, self.log_file, self.token_name, self.session)
+                sheet_name: check_sheet_exists(self.service, doc_id, sheet_name, self.log_file, self.token_name)
                 for sheet_name in unique_sheet_names
             }
 
@@ -167,7 +148,7 @@ class RotationsInfoScanner:
                 else:
                     log_to_file(self.log_file, f"⛔ Пропуск задачи {task.name_of_process}: лист '{sheet_name}' не найден.")
                     task.update_after_scan(success=False)
-                    update_task_scan_fields(self.session, task, self.log_file, table_name="RotationsInfo")
+                    update_task_scan_fields(session, task, self.log_file, table_name="RotationsInfo")
 
             if not valid_tasks:
                 log_to_file(self.log_file, f"⚪ Все задачи группы {scan_group} отфильтрованы. Пропуск batchGet.")
@@ -192,14 +173,13 @@ class RotationsInfoScanner:
                 ranges,
                 scan_group,
                 self.log_file,
-                self.token_name,
-                self.session
+                self.token_name
             )
             if not response_data:
                 # log_to_file(self.log_file, "❌ Пустой ответ от batchGet. Все задачи будут отмечены как неудачные.")
                 for task in valid_tasks:
                     task.update_after_scan(success=False)
-                    update_task_scan_fields(self.session, task, self.log_file, table_name="RotationsInfo")
+                    update_task_scan_fields(session, task, self.log_file, table_name="RotationsInfo")
                 continue
 
             normalized_response = {}
@@ -225,10 +205,10 @@ class RotationsInfoScanner:
                 if matched_values:
                     task.raw_values_json = matched_values
                     task.update_after_scan(success=True)
-                    update_task_scan_fields(self.session, task, self.log_file, table_name="RotationsInfo")
+                    update_task_scan_fields(session, task, self.log_file, table_name="RotationsInfo")
                 else:
                     task.update_after_scan(success=False)
-                    update_task_scan_fields(self.session, task, self.log_file, table_name="RotationsInfo")
+                    update_task_scan_fields(session, task, self.log_file, table_name="RotationsInfo")
                     log_to_file(self.log_file, f"⚠️ [Task {task.name_of_process} {task.source_page_name}] Диапазон {expected_sheet}!{task.source_page_area} не найден или пуст.")
 
         for task in self.tasks:
@@ -242,7 +222,7 @@ class RotationsInfoScanner:
 # Фаза обработки
 #############################################################################################
 
-    def process_phase(self):
+    def process_phase(self, session):
         log_section("🛠️ Фаза обработки", self.log_file)
 
         if not self.tasks:
@@ -271,7 +251,7 @@ class RotationsInfoScanner:
                 # Обновление в БД, если данные изменились
                 if task.changed:
                     try:
-                        update_task_process_fields(self.session, task, self.log_file, table_name="RotationsInfo")
+                        update_task_process_fields(session, task, self.log_file, table_name="RotationsInfo")
                     except Exception as e:
                         log_to_file(self.log_file, f"❌ Ошибка при сохранении изменений в БД: {e}")
 
@@ -290,7 +270,7 @@ class RotationsInfoScanner:
 # Фаза обновления
 #############################################################################################
 
-    def update_phase(self):
+    def update_phase(self, session):
         # log_section("🔼 Фаза обновления", self.log_file)
 
         # Определяем наличие изменений по группам
@@ -310,14 +290,14 @@ class RotationsInfoScanner:
         # Обработка основной группы задач
         if main_tasks:
             try:
-                self.import_main_data(main_tasks)
+                self.import_main_data(main_tasks, session)
             except Exception as e:
                 log_to_file(self.log_file, f"❌ Ошибка при обновлении update_main: {e}")
 
         # Обработка shuffle-группы задач
         if shuffle_tasks:
             try:
-                self.import_shuffle_data(shuffle_tasks)
+                self.import_shuffle_data(shuffle_tasks, session)
             except Exception as e:
                 log_to_file(self.log_file, f"❌ Ошибка при обновлении update_shuffle: {e}")
 
@@ -340,7 +320,7 @@ class RotationsInfoScanner:
 # Импорт данных в Main
 ##############################################################################################
 
-    def import_main_data(self, all_main_tasks):
+    def import_main_data(self, all_main_tasks, session):
         try:
             grouped_by_page = defaultdict(list)
             for task in all_main_tasks:
@@ -367,7 +347,7 @@ class RotationsInfoScanner:
                                 # log_to_file(self.log_file, f"⚪ [Task {name} {getattr(task, 'source_page_name', '?')}] нет корректных данных. Пропуск.")
                                 task.update_after_upload(False)
                                 update_task_update_fields(
-                                    session=self.session,
+                                    session=session,
                                     task=task,
                                     log_file=self.log_file,
                                     table_name="RotationsInfo"
@@ -379,7 +359,7 @@ class RotationsInfoScanner:
                                 # log_to_file(self.log_file, f"⚪ [Task {name} {task.source_page_name}] содержит 'NULL'. Пропуск.")
                                 task.update_after_upload(False)
                                 update_task_update_fields(
-                                    session=self.session,
+                                    session=session,
                                     task=task,
                                     log_file=self.log_file,
                                     table_name="RotationsInfo"
@@ -431,7 +411,7 @@ class RotationsInfoScanner:
                             token_name=self.token_name,
                             update_group=reference_task.update_group,
                             log_file=self.log_file,
-                            session=self.session
+                            session=session
                         )
                     except Exception as e:
                         success, error = False, str(e)
@@ -446,7 +426,7 @@ class RotationsInfoScanner:
                             token_name=self.token_name,
                             update_group=reference_task.update_group,
                             log_file=self.log_file,
-                            session=self.session
+                            session=session
                         )
                     except Exception as e:
                         log_to_file(self.log_file, f"⚠️ Ошибка при форматировании листа: {e}")
@@ -455,7 +435,7 @@ class RotationsInfoScanner:
                         try:
                             task.update_after_upload(success)
                             update_task_update_fields(
-                                session=self.session,
+                                session=session,
                                 task=task,
                                 log_file=self.log_file,
                                 table_name="RotationsInfo"
@@ -479,7 +459,7 @@ class RotationsInfoScanner:
 # Импорт Shuffle в ротации
 ##############################################################################################
 
-    def import_shuffle_data(self, tasks):
+    def import_shuffle_data(self, tasks, session):
         log_section("📥 Импорт данных для update_shuffle", self.log_file)
 
         shuffle_groups = defaultdict(list)
@@ -505,8 +485,7 @@ class RotationsInfoScanner:
                         ranges=[f"{page_name}!D1:AC200"],
                         scan_group=update_group,
                         log_file=self.log_file,
-                        token_name=self.token_name,
-                        session=self.session  # важно!
+                        token_name=self.token_name
                     )
                     sheet_values = list(raw.values())[0] if raw else []
 
@@ -523,7 +502,7 @@ class RotationsInfoScanner:
                         for task in page_tasks:
                             task.update_after_upload(False)
                             update_task_update_fields(
-                                session=self.session,
+                                session=session,
                                 task=task,
                                 log_file=self.log_file,
                                 table_name="RotationsInfo"
@@ -538,7 +517,7 @@ class RotationsInfoScanner:
                             # log_to_file(self.log_file, f"⚪ [Task {task.name_of_process} {task.source_page_name}] Нет данных. Пропуск.")
                             task.update_after_upload(False)
                             update_task_update_fields(
-                                session=self.session,
+                                session=session,
                                 task=task,
                                 log_file=self.log_file,
                                 table_name="RotationsInfo"
@@ -552,7 +531,7 @@ class RotationsInfoScanner:
                             # log_to_file(self.log_file, f"⚪ [Task {task.name_of_process} {task.source_page_name}] Содержит 'NULL'. Пропуск.")
                             task.update_after_upload(False)
                             update_task_update_fields(
-                                session=self.session,
+                                session=session,
                                 task=task,
                                 log_file=self.log_file,
                                 table_name="RotationsInfo"
@@ -581,32 +560,30 @@ class RotationsInfoScanner:
                         batch_data=batch_data,
                         token_name=self.token_name,
                         update_group=update_group,
-                        log_file=self.log_file,
-                        session=self.session  # ← добавлено!
+                        log_file=self.log_file
                     )
 
                     for task in page_tasks:
                         if task in tasks_with_data:
                             task.update_after_upload(success)
                             update_task_update_fields(
-                                session=self.session,
+                                session=session,
                                 task=task,
                                 log_file=self.log_file,
                                 table_name="RotationsInfo"
                             )
-                    # if success:
-                    #     log_to_file(self.log_file, f"✅ Успешная вставка данных страницы {page_name}.")
-                    # else:
-                    #     log_to_file(self.log_file, f"❌ Ошибка вставки страницы {page_name}: {error}")
+                    if success:
+                        log_to_file(self.log_file, f"✅ Успешная вставка данных страницы {page_name}.")
+                    else:
+                        log_to_file(self.log_file, f"❌ Ошибка вставки страницы {page_name}: {error}")
 
-                    # log_separator(self.log_file)
 
                 except Exception as e:
                     log_to_file(self.log_file, f"❌ Критическая ошибка страницы {page_name}: {e}")
                     for task in page_tasks:
                         task.update_after_upload(False)
                         update_task_update_fields(
-                            session=self.session,
+                            session=session,
                             task=task,
                             log_file=self.log_file,
                             table_name="RotationsInfo"
