@@ -11,6 +11,8 @@ from core.config import TIMEZONE
 class Task:
     def __init__(self, data):
         self.id = data.get("id")
+        self.is_active = data.get("is_active", 1)
+        self.related_month = data.get("related_month")
         self.name_of_process = data.get("name_of_process")
         self.source_table_type = data.get("source_table_type")
         self.source_page_name = data.get("source_page_name")
@@ -40,7 +42,6 @@ class Task:
         self.last_update = self._parse_datetime(data.get("last_update"))
         self.update_quantity = data.get("update_quantity", 0)
         self.update_failures = data.get("update_failures", 0)
-        self.is_active = data.get("is_active", 1)
 
         # Эти поля будут заполняться в сканере
         self.source_table = None # база данных, откуда берем данные

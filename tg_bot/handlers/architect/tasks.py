@@ -1,8 +1,11 @@
+# tg_bot/handlers/architect/tasks.py
+
 from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from tg_bot.states.shift_navigation import ShiftNavigationState
+import httpx
 
 router = Router()
 
@@ -15,10 +18,7 @@ async def select_tasks(callback: CallbackQuery, state: FSMContext, bot: Bot):
         await state.set_state(ShiftNavigationState.SELECT_TASKS)
 
         kb = InlineKeyboardBuilder()
-        kb.button(text="⚙️ Studio optimization", callback_data="task:optimize")
-        kb.button(text="📊 KPI monitoring", callback_data="task:kpi")
-        kb.button(text="🛠 Tech audits", callback_data="task:tech")
-        # Кнопка возврата на дашборд
+        kb.button(text="🖥 Server Info", callback_data="task:server")
         kb.button(text="🔙 Back", callback_data="return_shift")
         kb.adjust(1)
 
@@ -28,6 +28,7 @@ async def select_tasks(callback: CallbackQuery, state: FSMContext, bot: Bot):
         )
     except Exception:
         await callback.answer("Произошла ошибка!", show_alert=True)
+
 
 @router.callback_query(F.data.startswith("task:"))
 async def view_tasks(callback: CallbackQuery, state: FSMContext, bot: Bot):
@@ -41,7 +42,6 @@ async def view_tasks(callback: CallbackQuery, state: FSMContext, bot: Bot):
         task_text = await get_task_text(task_type)
 
         kb = InlineKeyboardBuilder()
-        # Кнопка возврата к выбору задач
         kb.button(text="🔙 Back to tasks", callback_data="select_tasks")
         kb.adjust(1)
 
@@ -53,6 +53,7 @@ async def view_tasks(callback: CallbackQuery, state: FSMContext, bot: Bot):
     except Exception:
         await callback.answer("Произошла ошибка!", show_alert=True)
 
+
 @router.callback_query(F.data == "return_shift")
 async def proxy_return_shift(callback: CallbackQuery, state: FSMContext, bot):
     from tg_bot.handlers.common_callbacks import return_to_dashboard
@@ -60,26 +61,25 @@ async def proxy_return_shift(callback: CallbackQuery, state: FSMContext, bot):
 
 
 async def get_task_text(task_type: str) -> str:
-    if task_type == "optimize":
-        return (
-            "<b>⚙️ Studio Optimization Tasks</b>\n"
-            "• Review rotation times\n"
-            "• Analyze table load per hour\n"
-            "• Identify underutilized stations"
-        )
-    elif task_type == "kpi":
-        return (
-            "<b>📊 KPI Monitoring</b>\n"
-            "• Check avg rounds per hour\n"
-            "• Compare SM vs. Floor stats\n"
-            "• Track absenteeism rate"
-        )
-    elif task_type == "tech":
-        return (
-            "<b>🛠 Technical Audit Tasks</b>\n"
-            "• Review camera coverage\n"
-            "• Check dealer mic issues\n"
-            "• Confirm lighting standards"
-        )
-    else:
-        return "❌ Unknown task type"
+    if task_type == "server":
+        try:
+            async with httpx.AsyncClient(timeout=3) as client:
+                r = await client.get("http://localhost:8888/status")
+                data = r.json()
+
+            cpu = data.get("cpu_percent", [])
+            mem = data.get("memory", {})
+            net = data.get("network", {})
+
+            return (
+                "<b>🖥 Server Info</b>\n\n"
+                f"<b>CPU:</b> {', '.join([f'{x}%' for x in cpu])}\n"
+                f"<b>Memory:</b> {mem.get('used') // (1024**2)}MB / {mem.get('total') // (1024**2)}MB ({mem.get('percent')}%)\n"
+                f"<b>Network:</b>\n"
+                f"• Sent: {net.get('bytes_sent') // (1024**2)}MB\n"
+                f"• Recv: {net.get('bytes_recv') // (1024**2)}MB"
+            )
+        except Exception as e:
+            return f"❌ Ошибка при получении данных: {e}"
+
+    return "❌ Unknown task type"

@@ -3,7 +3,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import socket
-from utils.db_orm import insert_usage
+# from utils.db_orm import insert_usage
 from utils.logger import log_to_file
 from tabulate import tabulate
 
@@ -457,13 +457,13 @@ def format_sheet(
                         success = False
 
 
-        insert_usage(
-            session=session,
-            token=token_name,
-            count=1,
-            scan_group=update_group,
-            success=success
-        )
+        # insert_usage(
+        #     session=session,
+        #     token=token_name,
+        #     count=1,
+        #     scan_group=update_group,
+        #     success=success
+        # )
 
         # if success:
         #     log_to_file(log_file, f"✅ Форматирование листа '{sheet_title}' завершено успешно.")
@@ -472,11 +472,11 @@ def format_sheet(
 
     except Exception as e:
         log_to_file(log_file, f"❌ Ошибка в format_sheet(): {e}")
-        insert_usage(
-            session=session,
-            token=token_name,
-            count=1,
-            scan_group=update_group,
-            success=False
-        )
+        # insert_usage(
+        #     session=session,
+        #     token=token_name,
+        #     count=1,
+        #     scan_group=update_group,
+        #     success=False
+        # )
         raise

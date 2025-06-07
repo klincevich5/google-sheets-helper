@@ -46,18 +46,6 @@ class MonitoringStorage(Base):
         UniqueConstraint('dealer_name', 'report_date', 'shift_type', name='uq_dealer_date_shift'),
     )
 
-class ApiUsage(Base):
-    __tablename__ = 'ApiUsage'
-
-    id = Column(Integer, primary_key=True)
-    date = Column(DateTime(timezone=True))
-    token = Column(Text)
-    counter = Column(Integer)
-    info_scan_group = Column(Text)
-    info_update_group = Column(Text)
-    success = Column(Boolean)
-
-
 class BotSettings(Base):
     __tablename__ = 'BotSettings'
 
@@ -70,12 +58,12 @@ class FeedbackStorage(Base):
 
     id = Column(Integer, primary_key=True)
     related_month = Column(Date)
-    date = Column(Date)
-    shift = Column(Text)
+    related_date = Column(Date)
+    related_shift = Column(Text)
     floor = Column(Text)
     game = Column(Text)
-    gp_name_surname = Column(Text)
-    sm_name_surname = Column(Text)
+    dealer_name = Column(Text)
+    sm_name = Column(Text)
     reason = Column(Text)
     total = Column(Integer)
     proof = Column(Text)
@@ -92,14 +80,15 @@ class MistakeStorage(Base):
     related_month = Column(Date)
     floor = Column(Text)
     table_name = Column(Text)
-    date = Column(Date)
-    time = Column(Time(timezone=True))
+    related_date = Column(Date)
+    related_shift = Column(Text)
+    event_time = Column(Time(timezone=True))
     game_id = Column(Text)
     mistake = Column(Text)
-    type = Column(Text)
+    mistake_type = Column(Text)
     is_cancel = Column(Integer)
-    dealer = Column(Text)
-    sm = Column(Text)
+    dealer_name = Column(Text)
+    sm_name = Column(Text)
     last_row = Column(Integer)
 
 
@@ -157,6 +146,25 @@ class SheetsInfo(Base):
     update_failures = Column(Integer)
 
 
+class TaskTemplate(Base):
+    __tablename__ = 'TaskTemplate'
+
+    id = Column(Integer, primary_key=True)
+    source_table = Column(String, nullable=False)  # "RotationsInfo" или "SheetsInfo"
+    name_of_process = Column(String, unique=True, nullable=False)
+
+    source_table_type = Column(String)
+    source_page_name = Column(String)
+    source_page_area = Column(String)
+    scan_group = Column(String)
+    scan_interval = Column(Integer)
+    process_data_method = Column(String)
+    target_table_type = Column(String)
+    target_page_name = Column(String)
+    target_page_area = Column(String)
+    update_group = Column(String)
+
+
 class TrackedTables(Base):
     __tablename__ = 'TrackedTables'
 
@@ -168,16 +176,24 @@ class TrackedTables(Base):
     valid_to = Column(Date)
 
 
-class FeedbackStatus(Base):
-    __tablename__ = 'FeedbackStatus'
+class DealerMonthlyStatus(Base):
+    __tablename__ = "DealerMonthlyStatus"
 
     id = Column(Integer, primary_key=True)
-    name_surname = Column(Text)
-    status = Column(Text)
+    dealer_name = Column(String, nullable=False)
+    dealer_nicknames = Column(PG_ARRAY(String), default=[])
+
+    related_month = Column(Date, nullable=False)
+
+    schedule = Column(Boolean)
+    bonus = Column(Boolean)
+    qa_list = Column(Boolean)
+    feedback_status = Column(Boolean)
 
     __table_args__ = (
-        UniqueConstraint('name_surname', name='uq_name_surname'),
+        UniqueConstraint("dealer_name", "related_month", name="uq_dealername_month"),
     )
+
 
 class ScheduleOT(Base):
     __tablename__ = 'ScheduleOT'
@@ -206,5 +222,40 @@ class User(Base):
 
     id = Column(Integer, primary_key=True)
     telegram_id = Column(BigInteger, unique=True, nullable=False)
-    full_name = Column(String, nullable=False)
+    dealer_name = Column(String, nullable=False)
     role = Column(Enum(UserRole), nullable=False)
+    photo_fileID = Column(String, nullable=True, default=None)
+
+
+class QaList(Base):
+    __tablename__ = "QaList"
+
+    id = Column(Integer, primary_key=True)
+    dealer_name = Column(String, nullable=False)
+
+    VIP = Column(String, nullable=False)
+    GENERIC = Column(String, nullable=False)
+    LEGENDZ = Column(String, nullable=False)
+    GSBJ = Column(String, nullable=False)
+    TURKISH = Column(String, nullable=False)
+    TRISTAR = Column(String, nullable=False)
+    TritonRL = Column(String, nullable=False)
+
+    QA_comment = Column(String)
+    
+    Male = Column(String, nullable=False)
+    BJ = Column(String, nullable=False)
+    BC = Column(String, nullable=False)
+    RL = Column(String, nullable=False)
+    DT = Column(String, nullable=False)
+    HSB = Column(String, nullable=False)
+    swBJ = Column(String, nullable=False)
+    swBC = Column(String, nullable=False)
+    swRL = Column(String, nullable=False)
+    SH = Column(String, nullable=False)
+    gsDT = Column(String, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('dealer_name', name='uq_dealer_name'),
+    )
+    

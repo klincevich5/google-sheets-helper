@@ -11,7 +11,7 @@ from core.config import TIMEZONE
 from zoneinfo import ZoneInfo
 
 from utils.logger import log_to_file
-from utils.db_orm import insert_usage
+# from utils.db_orm import insert_usage
 
 try:
     timezone = ZoneInfo(TIMEZONE)
@@ -29,42 +29,41 @@ def load_credentials(token_path, log_file, session):
     token_name = os.path.basename(token_path).replace("_token.json", "")
     success = False
 
-    try:
-        with open(token_path, encoding="utf-8") as f:
-            token = json.load(f)
-        creds = Credentials(
-            token=token["access_token"],
-            refresh_token=token.get("refresh_token"),
-            token_uri=token["token_uri"],
-            client_id=token["client_id"],
-            client_secret=token["client_secret"],
-            scopes=token.get("scopes", ["https://www.googleapis.com/auth/spreadsheets"])
-        )
+    # try:
+    with open(token_path, encoding="utf-8") as f:
+        token = json.load(f)
+    creds = Credentials(
+        token=token["access_token"],
+        refresh_token=token.get("refresh_token"),
+        token_uri=token["token_uri"],
+        client_id=token["client_id"],
+        client_secret=token["client_secret"],
+        scopes=token.get("scopes", ["https://www.googleapis.com/auth/spreadsheets"])
+    )
 
-        if not creds.valid and creds.refresh_token:
-            try:
-                creds.refresh(Request())
-                with open(token_path, "w", encoding="utf-8") as token_file:
-                    token_file.write(creds.to_json())
-                log_to_file(log_file, f"🔄 Токен обновлён: {token_path}")
-                insert_usage(session, token=token_name, count=1, scan_group="token_refresh", success=True)
-            except Exception as e:
-                log_to_file(log_file, f"❌ Ошибка обновления токена {token_path}: {e}")
-                insert_usage(session, token=token_name, count=1, scan_group="token_refresh", success=False)
-                raise
+    if not creds.valid and creds.refresh_token:
+        try:
+            creds.refresh(Request())
+            with open(token_path, "w", encoding="utf-8") as token_file:
+                token_file.write(creds.to_json())
+            log_to_file(log_file, f"🔄 Токен обновлён: {token_path}")
+            # insert_usage(session, token=token_name, count=1, scan_group="token_refresh", success=True)
+        except Exception as e:
+            log_to_file(log_file, f"❌ Ошибка обновления токена {token_path}: {e}")
+            # insert_usage(session, token=token_name, count=1, scan_group="token_refresh", success=False)
+            raise
 
 
-        if not creds.valid:
-            raise RuntimeError(f"❌ Недействительный токен: {token_path}")
+    if not creds.valid:
+        raise RuntimeError(f"❌ Недействительный токен: {token_path}")
 
-        service = build("sheets", "v4", credentials=creds)
-        log_to_file(log_file, f"✅ Авторизация выполнена: {token_name}")
-        success = True
-        return service
+    service = build("sheets", "v4", credentials=creds)
+    log_to_file(log_file, f"✅ Авторизация выполнена: {token_name}")
+    success = True
+    return service
 
-    finally:
-        insert_usage(session, token=token_name, count=1, scan_group="load_credentials", success=success)
-        log_to_file(log_file, f"after insert_usage: {token_name}")
+    # finally:
+    #     insert_usage(session, token=token_name, count=1, scan_group="load_credentials", success=success)
 
 ##################################################################################
 # Проверка существования листа
@@ -88,7 +87,7 @@ def check_sheet_exists(service, spreadsheet_id, sheet_name, log_file, token_name
 
     finally:
         token_name = os.path.basename(token_name).replace("_token.json", "")
-        insert_usage(session, token=token_name, count=1, scan_group="check_sheet", success=success)
+        # insert_usage(session, token=token_name, count=1, scan_group="check_sheet", success=success)
 
 ##################################################################################
 # Получение данных из Google Sheets
@@ -138,13 +137,13 @@ def batch_get(service, spreadsheet_id, ranges, scan_group, log_file, token_name,
                 log_to_file(log_file, f"❌ Ошибка batchGet: {e}")
                 break
 
-    insert_usage(
-        session,
-        token=os.path.basename(token_name).replace("_token.json", ""),
-        count=attempt + 1,
-        scan_group=scan_group,
-        success=success
-    )
+    # insert_usage(
+    #     session,
+    #     token=os.path.basename(token_name).replace("_token.json", ""),
+    #     count=attempt + 1,
+    #     scan_group=scan_group,
+    #     success=success
+    # )
 
     return data if success else {}
 
@@ -203,11 +202,11 @@ def batch_update(service, spreadsheet_id, batch_data, token_name, update_group, 
             log_to_file(log_file, f"❌ Ошибка batchUpdate: {e}")
             break
 
-    insert_usage(session,
-                 token=token_name,
-                 count=attempt + 1,
-                 update_group=update_group,
-                 success=success
-    )
+    # insert_usage(session,
+    #              token=token_name,
+    #              count=attempt + 1,
+    #              update_group=update_group,
+    #              success=success
+    # )
     
     return (True, None) if success else (False, "Превышено число попыток" if attempt == retries else "Ошибка запроса")

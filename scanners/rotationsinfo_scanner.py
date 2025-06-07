@@ -7,7 +7,7 @@ from tg_bot.utils.settings_access import is_scanner_enabled
 from core.data import load_rotationsinfo_tasks
 from utils.logger import log_to_file, log_separator, log_section
 from utils.formatting_utils import format_sheet
-from core.token_manager import TokenManager
+# from core.token_manager import TokenManager
 
 from core.config import (
     ROTATIONSINFO_LOG,
@@ -35,21 +35,25 @@ class RotationsInfoScanner:
         self.tasks = []
 
     def run(self):
-        try:
-            manager = TokenManager(self.token_map)
-        except Exception as e:
-            print(f"❌ Ошибка при инициализации TokenManager: {e}")
-            raise
+        # try:
+        #     manager = TokenManager(self.token_map)
+        # except Exception as e:
+        #     print(f"❌ Ошибка при инициализации TokenManager: {e}")
+        #     raise
 
         while True:
             try:
                 if not is_scanner_enabled("rotations_scanner"):
                     time.sleep(10)
                     continue
+                
+                log_section("▶️ RotationsInfo Активен. Новый цикл сканирования", self.log_file)
 
                 try:
-                    self.token_name, token_path = manager.select_best_token(self.log_file, self.session)
-                    log_to_file(self.log_file, f"🔑 Выбран {self.token_name} with token_path {token_path}")
+                    token_name = list(self.token_map.keys())[0]
+                    token_path = self.token_map[token_name]
+                    self.token_name = token_name
+
                     self.service = load_credentials(token_path, self.log_file, self.session)
                     log_to_file(self.log_file, f"🔐 Используется токен: {self.token_name}")
                 except Exception as e:
@@ -130,7 +134,7 @@ class RotationsInfoScanner:
         scan_groups = defaultdict(list)
         for task in ready_tasks:
             if not task.assign_doc_ids(self.doc_id_map):
-                log_to_file(self.log_file, f"⚠️ [Task {task.name_of_process}] Не удалось сопоставить doc_id. Пропуск.")
+                log_to_file(self.log_file, f"⚠️ [Task {task.name_of_process} {task.source_page_name}] Не удалось сопоставить doc_id. Пропуск.")
                 continue
             scan_groups[task.scan_group].append(task)
 
@@ -177,7 +181,7 @@ class RotationsInfoScanner:
             ranges = list(range_to_tasks.keys())
 
             log_to_file(self.log_file, "")
-            log_to_file(self.log_file, f"📤 Отправка batchGet на документ {task.source_table_type} с {len(ranges)} уникальными диапазонами:")
+            log_to_file(self.log_file, f"📤 Отправка batchGet на документ {task.source_table_type} с {len(ranges)} уникальными диапазонами:") # type: ignore
             
             for r in ranges:
                 log_to_file(self.log_file, f"   • {r}")
@@ -222,16 +226,15 @@ class RotationsInfoScanner:
                     task.raw_values_json = matched_values
                     task.update_after_scan(success=True)
                     update_task_scan_fields(self.session, task, self.log_file, table_name="RotationsInfo")
-                    log_to_file(self.log_file, f"✅ [Task {task.name_of_process}] Найден диапазон {sheet_name}!{cells_range}, строк: {len(matched_values)}")
                 else:
                     task.update_after_scan(success=False)
                     update_task_scan_fields(self.session, task, self.log_file, table_name="RotationsInfo")
-                    log_to_file(self.log_file, f"⚠️ [Task {task.name_of_process}] Диапазон {expected_sheet}!{task.source_page_area} не найден или пуст.")
+                    log_to_file(self.log_file, f"⚠️ [Task {task.name_of_process} {task.source_page_name}] Диапазон {expected_sheet}!{task.source_page_area} не найден или пуст.")
 
         for task in self.tasks:
             log_to_file(
                 self.log_file,
-                f"⚪ [Task {task.name_of_process}] Отсканировано: {task.scanned} | "
+                f"⚪ [Task {task.name_of_process} {task.source_page_name}] Отсканировано: {task.scanned} | "
                 f"Обработано: {task.proceed} | Изменено: {task.changed} | Загружено: {task.uploaded}"
             )
 
@@ -255,14 +258,14 @@ class RotationsInfoScanner:
                 try:
                     task.process_raw_value()
                 except Exception as e:
-                    # log_to_file(self.log_file, f"❌ [Task {task.name_of_process}] Ошибка в process_raw_value: {e}")
+                    # log_to_file(self.log_file, f"❌ [Task {task.name_of_process} {task.source_page_name}] Ошибка в process_raw_value: {e}")
                     continue
 
                 # Проверка изменений
                 try:
                     task.check_for_update()
                 except Exception as e:
-                    # log_to_file(self.log_file, f"❌ [Task {task.name_of_process}] Ошибка в check_for_update: {e}")
+                    # log_to_file(self.log_file, f"❌ [Task {task.name_of_process} {task.source_page_name}] Ошибка в check_for_update: {e}")
                     continue
 
                 # Обновление в БД, если данные изменились
@@ -273,13 +276,13 @@ class RotationsInfoScanner:
                         log_to_file(self.log_file, f"❌ Ошибка при сохранении изменений в БД: {e}")
 
             except Exception as e:
-                log_to_file(self.log_file, f"❌ [Task {task.name_of_process}] Неизвестная ошибка при обработке: {e}")
+                log_to_file(self.log_file, f"❌ [Task {task.name_of_process} {task.source_page_name}] Неизвестная ошибка при обработке: {e}")
 
         # Итоговый отчёт
         for task in self.tasks:
             log_to_file(
                 self.log_file,
-                f"⚪ [Task {task.name_of_process}] Отсканировано: {task.scanned} | "
+                f"⚪ [Task {task.name_of_process} {task.source_page_name}] Отсканировано: {task.scanned} | "
                 f"Обработано: {task.proceed} | Изменено: {task.changed} | Загружено: {task.uploaded}"
             )
 
@@ -542,7 +545,7 @@ class RotationsInfoScanner:
                             )
                             continue
                         
-                        # log_to_file(self.log_file, f"📦 [Task {task.name_of_process}] — {len(task.values_json)} строк (🔄 новые данные)")
+                        # log_to_file(self.log_file, f"📦 [Task {task.name_of_process} {task.source_page_name}] — {len(task.values_json)} строк (🔄 новые данные)")
 
                         flat = [str(cell).strip().upper() for row in task.values_json for cell in row if cell is not None]
                         if flat == ["NULL"]:
