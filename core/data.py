@@ -98,8 +98,8 @@ def load_rotationsinfo_tasks(session: Session, log_file):
     log_to_file(log_file, f"📚 Найдено шаблонов: {len(templates)}")
 
     existing_tasks = session.query(RotationsInfo).filter(
-        RotationsInfo.is_active == 1,
         RotationsInfo.related_month == related_month,
+        RotationsInfo.name_of_process.in_(template_names),
         RotationsInfo.source_page_name.in_(active_tabs)
     ).all()
     log_to_file(log_file, f"📦 Найдено активных задач: {len(existing_tasks)}")
@@ -165,7 +165,7 @@ def load_sheetsinfo_tasks(session: Session, log_file):
     log_section("🔼 Фаза определения задач (SheetsInfo)", log_file)
     now = datetime.now(timezone)
     related_month = now.replace(day=1).date()
-    log_to_file(log_file, f"🕒 Сейчас: {now}")
+    log_to_file(log_file, f"🕒 Сейчас: {now}. related_month: {related_month}")
 
     tasks = []
     templates = session.query(TaskTemplate).filter_by(source_table="SheetsInfo").all()
@@ -173,8 +173,8 @@ def load_sheetsinfo_tasks(session: Session, log_file):
     log_to_file(log_file, f"📚 Найдено шаблонов: {len(templates)}")
 
     existing_tasks = session.query(SheetsInfo).filter(
-        SheetsInfo.is_active == 1,
-        SheetsInfo.related_month == related_month
+        SheetsInfo.related_month == related_month,
+        SheetsInfo.name_of_process.in_(template_names)
     ).all()
     log_to_file(log_file, f"📦 Найдено активных задач: {len(existing_tasks)}")
 
@@ -220,7 +220,7 @@ def load_sheetsinfo_tasks(session: Session, log_file):
         minutes_left = int((next_scan - now).total_seconds() / 60)
 
         log_to_file(log_file, (
-            f"[✅READY] Task '{task.name_of_process} {task.source_page_name}' | "
+            f"[✅READY] Task '{task.name_of_process} {task.source_page_name} related_month {task.related_month} is_active {task.is_active}' | "
             f"Last scan: {last_scan:%Y-%m-%d %H:%M:%S} | "
             f"Interval: {task.scan_interval // 60} min | "
             f"In: {minutes_left} min | "

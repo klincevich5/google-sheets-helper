@@ -20,7 +20,7 @@ from tg_bot.utils.formatting import (
 )
 from tg_bot.services.db import get_user_role
 
-from tg_bot.handlers.architect.tasks import view_tasks
+from tg_bot.handlers.architect.tasks import select_tasks
 from tg_bot.handlers.service_manager.reports import select_report
 from tg_bot.handlers.service_manager.dealers_list import view_dealers_list
 from tg_bot.handlers.service_manager.feedback import view_feedbacks, view_mistakes
@@ -99,7 +99,7 @@ async def select_rotation_callback(callback: CallbackQuery, state: FSMContext, b
 # Architect
 @router.callback_query(F.data == "view_tasks", ShiftNavigationState.VIEWING_SHIFT)
 async def view_tasks_callback(callback: CallbackQuery, state: FSMContext, bot: Bot):
-    await view_tasks(callback, state, bot)
+    await select_tasks(callback, state, bot)
 
 # --- Отображение главной панели (универсально) ---
 async def render_shift_dashboard(msg_or_cb: Message | CallbackQuery, state: FSMContext, bot: Bot):

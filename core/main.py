@@ -25,8 +25,8 @@ from scanners.sheetsinfo_scanner import SheetsInfoScanner
 from scanners.monitoring_storage_scanner import MonitoringStorageScanner
 
 rotation_tokens = {
-    "RotationsInfo_scanner_1": ROTATIONSINFO_TOKEN_1,
-    "RotationsInfo_scanner_2": ROTATIONSINFO_TOKEN_2
+    "RotationsInfo_scanner_2": ROTATIONSINFO_TOKEN_2,
+    "RotationsInfo_scanner_1": ROTATIONSINFO_TOKEN_1
 }
 
 sheet_tokens = {
