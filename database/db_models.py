@@ -207,22 +207,23 @@ class ScheduleOT(Base):
 
 
 class UserRole(enum.Enum):
-    Shuffler = "Shuffler"
-    Dealer = "Dealer"
-    Manager = "Manager"
-    QA_Manager = "QA Manager"
-    HR_Manager = "HR Manager"
-    Chief_SM_Manager = "Chief SM Manager"
-    Trainer_Manager = "Trainer Manager"
-    Floor_Manager = "Floor Manager"
-    Admin = "Admin"
-    Architect = "Architect"
+    stranger = "stranger"
+    shuffler = "shuffler"
+    dealer = "dealer"
+    manager = "manager"
+    qa_manager = "qa_manager"
+    hr_manager = "hr_manager"
+    chief_sm_manager = "chief_sm_manager"
+    trainer_manager = "trainer_manager"
+    floor_manager = "floor_manager"
+    admin = "admin"
+    architect = "architect"
 
 class UserStatus(enum.Enum):
-    RequestedAccess = "requested_access"
-    Employee = "employee"
-    Suspended = "suspended"
-    Rejected = "rejected"
+    requested_access = "requested_access"
+    employee = "employee"
+    suspended = "suspended"
+    rejected = "rejected"
 
 class User(Base):
     __tablename__ = "users"
@@ -232,12 +233,11 @@ class User(Base):
     dealer_name = Column(String, nullable=False)
     role = Column(Enum(UserRole), nullable=False)
     photo_fileID = Column(String, nullable=True, default=None)
-    status = Column(Enum(UserStatus), nullable=False, default=UserStatus.RequestedAccess)
+    status = Column(Enum(UserStatus), nullable=False, default=UserStatus.requested_access)
     approved_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     approved_at = Column(DateTime, nullable=True)
 
     approved_by = relationship("User", remote_side=[id], backref="approved_users")
-
 
 class QaList(Base):
     __tablename__ = "QaList"

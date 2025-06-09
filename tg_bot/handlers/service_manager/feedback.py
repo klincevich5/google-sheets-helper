@@ -4,12 +4,13 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram import Bot
 from aiogram.fsm.context import FSMContext
 from tg_bot.states.shift_navigation import ShiftNavigationState
-from tg_bot.handlers.common_callbacks import push_state
+from tg_bot.handlers.common_callbacks import push_state, check_stranger_callback
 
 router = Router()
 
 @router.callback_query(F.data == "view_shift_feedbacks")
 async def view_feedbacks(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if await check_stranger_callback(callback): return
     print("[service_manager/feedback] view_shift_feedbacks")
     try:
         await push_state(state, ShiftNavigationState.VIEW_SHIFT_FEEDBACKS)
@@ -46,6 +47,7 @@ async def view_feedbacks(callback: CallbackQuery, state: FSMContext, bot: Bot):
 
 @router.callback_query(F.data == "view_shift_mistakes")
 async def view_mistakes(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if await check_stranger_callback(callback): return
     print("[service_manager/feedback] view_shift_mistakes")
     try:
         await push_state(state, ShiftNavigationState.VIEW_SHIFT_MISTAKES)
@@ -81,5 +83,6 @@ async def view_mistakes(callback: CallbackQuery, state: FSMContext, bot: Bot):
 
 @router.callback_query(F.data == "return_shift")
 async def proxy_return_shift(callback: CallbackQuery, state: FSMContext, bot):
+    if await check_stranger_callback(callback): return
     from tg_bot.handlers.common_callbacks import return_to_dashboard
     await return_to_dashboard(callback, state, bot)

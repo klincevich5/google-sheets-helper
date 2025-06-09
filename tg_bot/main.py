@@ -7,6 +7,7 @@ from tg_bot.handlers import (
     common_callbacks
 )
 from tg_bot.handlers import architect, dealer, service_manager
+from tg_bot.handlers.common_callbacks import setup_callback_security
 
 async def main():
     # Подключаем роутеры
@@ -32,6 +33,18 @@ async def main():
         # общие callback-и
         common_callbacks,
     )
+
+    # Настройка безопасности callback для всех роутеров
+    for r in [
+        viewing_shift, calendar_navigation,
+        dealer.feedback.router, dealer.mistakes.router,
+        service_manager.feedback.router, service_manager.reports.router,
+        service_manager.team.router, service_manager.dealers_list.router,
+        service_manager.rotations.router,
+        architect.tasks.router,
+        common_callbacks,
+    ]:
+        setup_callback_security(r)
 
     await dp.start_polling(bot, handle_signals=False)
 

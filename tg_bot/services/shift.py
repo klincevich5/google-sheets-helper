@@ -25,3 +25,6 @@ async def get_mistakes(selected_date: date, shift_type: str) -> list[str]:
         "• @dealer_anna — «Missed payout on table 4»",
         "• @dealer_ivan — «Incorrect dealing in round 2»"
     ]
+
+# если потребуется текущее время, используйте:
+# from core.timezone import now

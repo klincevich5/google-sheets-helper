@@ -5,7 +5,7 @@ from aiogram.types import CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from tg_bot.states.shift_navigation import ShiftNavigationState
-from tg_bot.handlers.common_callbacks import push_state
+from tg_bot.handlers.common_callbacks import push_state, check_stranger_callback
 
 router = Router()
 
@@ -13,6 +13,7 @@ router = Router()
 # 🔹 Просмотр дилера
 @router.callback_query(F.data.startswith("dealer:"))
 async def view_dealer(callback: CallbackQuery, state: FSMContext):
+    if await check_stranger_callback(callback): return
     print("[service_manager/team] view_dealer")
     try:
         await push_state(state, ShiftNavigationState.VIEW_EMPLOYEE)
@@ -41,6 +42,7 @@ async def view_dealer(callback: CallbackQuery, state: FSMContext):
 # 🔹 Фидбеки по дилеру
 @router.callback_query(F.data == "dealer_feedbacks")
 async def view_dealer_feedbacks(callback: CallbackQuery, state: FSMContext):
+    if await check_stranger_callback(callback): return
     print("[service_manager/team] view_dealer_feedbacks")
     try:
         await push_state(state, ShiftNavigationState.VIEW_DEALER_FEEDBACKS)
@@ -70,6 +72,7 @@ async def view_dealer_feedbacks(callback: CallbackQuery, state: FSMContext):
 # 🔹 Ошибки по дилеру
 @router.callback_query(F.data == "dealer_mistakes")
 async def view_dealer_mistakes(callback: CallbackQuery, state: FSMContext):
+    if await check_stranger_callback(callback): return
     print("[service_manager/team] view_dealer_mistakes")
     try:
         await push_state(state, ShiftNavigationState.VIEW_DEALER_MISTAKES)
@@ -98,5 +101,6 @@ async def view_dealer_mistakes(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "return_shift")
 async def proxy_return_shift(callback: CallbackQuery, state: FSMContext, bot):
+    if await check_stranger_callback(callback): return
     from tg_bot.handlers.common_callbacks import return_to_dashboard
     await return_to_dashboard(callback, state, bot)

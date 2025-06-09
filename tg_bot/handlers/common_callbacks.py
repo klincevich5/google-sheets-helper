@@ -5,8 +5,38 @@ from aiogram.types import CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from tg_bot.states.shift_navigation import ShiftNavigationState
+from tg_bot.services.db import get_or_create_user
 
 router = Router()
+
+async def check_stranger_callback(callback: CallbackQuery) -> bool:
+    user = await get_or_create_user(callback.from_user.id, dealer_name=getattr(callback.from_user, "full_name", None))
+    role = user["role"].lower() if user.get("role") else "stranger"
+    if role == "stranger":
+        await callback.answer(
+            "⛔️ Access not granted.\nPlease contact your manager to get access.",
+            show_alert=True
+        )
+        return True
+    return False
+
+# --- Middleware for callback security ---
+from aiogram.dispatcher.middlewares.base import BaseMiddleware
+class StrangerBlockCallbackMiddleware(BaseMiddleware):
+    async def __call__(self, handler, event: CallbackQuery, data):
+        user = await get_or_create_user(event.from_user.id, dealer_name=event.from_user.full_name)
+        role = user["role"].lower() if user.get("role") else "stranger"
+        is_forwarded = False  # callback can't be forwarded
+        if role == "stranger":
+            await event.answer(
+                "⛔️ Access not granted.\nPlease contact your manager to get access.",
+                show_alert=True
+            )
+            return  # Block further processing
+        return await handler(event, data)
+
+def setup_callback_security(router):
+    router.callback_query.middleware(StrangerBlockCallbackMiddleware())
 
 # --- Стек состояний ---
 async def push_state(state: FSMContext, new_state):
@@ -28,6 +58,8 @@ async def pop_state(state: FSMContext):
 
 @router.callback_query(F.data == "return_shift")
 async def return_to_dashboard(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if await check_stranger_callback(callback): return
+
     print("[common_callbacks] return_to_dashboard: resetting to dashboard")
 
     await state.update_data(state_stack=[], current_state=None)
@@ -38,6 +70,8 @@ async def return_to_dashboard(callback: CallbackQuery, state: FSMContext, bot: B
 
 @router.callback_query(F.data == "contact_info")
 async def contact_info(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if await check_stranger_callback(callback): return
+
     print("[common_callbacks] contact_info")
     try:
         data = await state.get_data()
@@ -85,6 +119,8 @@ async def contact_info(callback: CallbackQuery, state: FSMContext, bot: Bot):
 # --- Универсальный fallback для неизвестных callback_data ---
 @router.callback_query()
 async def fallback_callback(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if await check_stranger_callback(callback): return
+
     import logging
     print(f"[common_callbacks] fallback_callback: {callback.data}")
     logging.warning(f"Unhandled callback: {callback.data}")

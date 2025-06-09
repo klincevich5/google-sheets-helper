@@ -3,7 +3,7 @@ from aiogram.types import CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from tg_bot.states.shift_navigation import ShiftNavigationState
-from tg_bot.handlers.common_callbacks import push_state
+from tg_bot.handlers.common_callbacks import push_state, check_stranger_callback
 from tg_bot.utils.utils import get_current_shift_and_date
 from tg_bot.utils.dealers_list_creator import generate_dealers_list_text
 from database.session import SessionLocal
@@ -22,6 +22,7 @@ router = Router()
 
 @router.callback_query(F.data == "view_dealers_list")
 async def view_dealers_list(callback: CallbackQuery, state: FSMContext, bot):
+    if await check_stranger_callback(callback): return
     print("[service_manager/team] view_dealers_list")
 
     try:

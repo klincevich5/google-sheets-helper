@@ -11,6 +11,7 @@ from tg_bot.states.shift_navigation import ShiftNavigationState
 from tg_bot.utils.utils import day_or_night
 import httpx
 import json
+from tg_bot.handlers.common_callbacks import check_stranger_callback
 
 router = Router()
 PAGE_SIZE = 5
@@ -21,6 +22,7 @@ def get_shift_label(now: datetime) -> str:
 
 @router.callback_query(F.data == "select_tasks")
 async def select_tasks(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if await check_stranger_callback(callback): return
     from tg_bot.handlers.common_callbacks import push_state
     await push_state(state, ShiftNavigationState.SELECT_TASKS)
     await state.set_state(ShiftNavigationState.SELECT_TASKS)
@@ -41,6 +43,7 @@ async def select_tasks(callback: CallbackQuery, state: FSMContext, bot: Bot):
 
 @router.callback_query(F.data.startswith("task:list:"))
 async def list_tasks(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if await check_stranger_callback(callback): return
     try:
         _, _, table_name, page_str = callback.data.split(":")
         page = int(page_str)
@@ -108,6 +111,7 @@ async def list_tasks(callback: CallbackQuery, state: FSMContext, bot: Bot):
 
 @router.callback_query(F.data.startswith("task:details:"))
 async def task_details(callback: CallbackQuery):
+    if await check_stranger_callback(callback): return
     _, _, table_name, task_id, page = callback.data.split(":")
     model = SheetsInfo if table_name == "sheets" else RotationsInfo
 
@@ -155,6 +159,7 @@ async def task_details(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("task:toggle:"))
 async def toggle_task_status(callback: CallbackQuery):
+    if await check_stranger_callback(callback): return
     _, _, table_name, task_id, page = callback.data.split(":")
     model = SheetsInfo if table_name == "sheets" else RotationsInfo
 
@@ -168,15 +173,18 @@ async def toggle_task_status(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("task:run:"))
 async def task_run(callback: CallbackQuery):
+    if await check_stranger_callback(callback): return
     await callback.answer("🚧 Manual run not implemented yet", show_alert=True)
 
 @router.callback_query(F.data == "return_shift")
 async def proxy_return_shift(callback: CallbackQuery, state: FSMContext, bot):
+    if await check_stranger_callback(callback): return
     from tg_bot.handlers.common_callbacks import return_to_dashboard
     await return_to_dashboard(callback, state, bot)
 
 @router.callback_query(F.data == "task:server")
 async def view_server(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if await check_stranger_callback(callback): return
     try:
         from tg_bot.handlers.common_callbacks import push_state
         await push_state(state, ShiftNavigationState.VIEW_TASKS)

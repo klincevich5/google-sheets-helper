@@ -3,7 +3,7 @@ from aiogram.types import CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from tg_bot.states.shift_navigation import ShiftNavigationState
-from tg_bot.handlers.common_callbacks import push_state
+from tg_bot.handlers.common_callbacks import push_state, check_stranger_callback
 from database.session import SessionLocal
 from tg_bot.utils.reports_creator import generate_studio_report_text
 from tg_bot.utils.utils import get_current_shift_and_date
@@ -22,6 +22,7 @@ router = Router()
 
 @router.callback_query(F.data == "select_report")
 async def select_report(callback: CallbackQuery, state: FSMContext, bot):
+    if await check_stranger_callback(callback): return
     print("[service_manager/reports] select_report")
     try:
         await push_state(state, ShiftNavigationState.SELECT_REPORT)
@@ -66,6 +67,7 @@ async def select_report(callback: CallbackQuery, state: FSMContext, bot):
 
 @router.callback_query(F.data.startswith("report:"))
 async def view_report(callback: CallbackQuery, state: FSMContext, bot):
+    if await check_stranger_callback(callback): return
     print("[service_manager/reports] view_report")
     try:
         await push_state(state, ShiftNavigationState.VIEW_REPORT)
@@ -115,5 +117,6 @@ async def view_report(callback: CallbackQuery, state: FSMContext, bot):
 
 @router.callback_query(F.data == "return_shift")
 async def proxy_return_shift(callback: CallbackQuery, state: FSMContext, bot):
+    if await check_stranger_callback(callback): return
     from tg_bot.handlers.common_callbacks import return_to_dashboard
     await return_to_dashboard(callback, state, bot)

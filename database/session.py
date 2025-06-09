@@ -10,19 +10,19 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("SQLALCHEMY_DATABASE_URL")
 if not DATABASE_URL:
-    raise RuntimeError("❌ Не задана переменная окружения SQLALCHEMY_DATABASE_URL")
+    raise RuntimeError("❌ Environment variable SQLALCHEMY_DATABASE_URL is not set")
 
 try:
     engine = create_engine(DATABASE_URL)
 except Exception as e:
-    raise RuntimeError(f"❌ Ошибка при создании engine: {e}")
+    raise RuntimeError(f"❌ Error creating engine: {e}")
 
 SessionLocal = sessionmaker(bind=engine)
 
 @contextmanager
 def get_session():
     """
-    Контекстный менеджер для работы с сессией БД.
+    Context manager for working with the database session.
     """
     session = SessionLocal()
     try:

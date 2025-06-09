@@ -8,7 +8,7 @@ import json
 
 from core.config import TIMEZONE, ROTATION_ORDER
 from tg_bot.states.shift_navigation import ShiftNavigationState
-from tg_bot.handlers.common_callbacks import push_state
+from tg_bot.handlers.common_callbacks import push_state, check_stranger_callback
 from database.db_models import RotationsInfo
 from database.session import SessionLocal
 
@@ -19,6 +19,7 @@ def shorten_name(name: str, max_len: int = 14) -> str:
 
 @router.callback_query(F.data == "select_rotation", ShiftNavigationState.VIEWING_SHIFT)
 async def select_rotation(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if await check_stranger_callback(callback): return
     await push_state(state, ShiftNavigationState.VIEWING_SHIFT)
     await state.set_state(ShiftNavigationState.VIEWING_SHIFT)
     await state.update_data(rotation_page=0)
@@ -41,9 +42,7 @@ async def select_rotation(callback: CallbackQuery, state: FSMContext, bot: Bot):
 
 @router.callback_query(F.data.startswith("rotation:"), ShiftNavigationState.VIEWING_SHIFT)
 async def view_rotation_detail(callback: CallbackQuery, state: FSMContext, bot: Bot, process_name: str = None):
-    import json
-    from database.session import SessionLocal
-
+    if await check_stranger_callback(callback): return
     data = await state.get_data()
     if process_name is None:
         process_name = callback.data.removeprefix("rotation:")
@@ -153,6 +152,7 @@ async def view_rotation_detail(callback: CallbackQuery, state: FSMContext, bot: 
 
 @router.callback_query(F.data.startswith("rotation_scroll:"), ShiftNavigationState.VIEWING_SHIFT)
 async def scroll_rotation(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if await check_stranger_callback(callback): return
     try:
         _, direction, process_name = callback.data.split(":", maxsplit=2)
     except ValueError:
@@ -173,4 +173,5 @@ async def scroll_rotation(callback: CallbackQuery, state: FSMContext, bot: Bot):
 
 @router.callback_query(F.data == "noop")
 async def noop_handler(callback: CallbackQuery):
+    if await check_stranger_callback(callback): return
     await callback.answer()  # Просто молча глотаем клик

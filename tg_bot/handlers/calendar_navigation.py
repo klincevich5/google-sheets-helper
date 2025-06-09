@@ -10,7 +10,7 @@ from core.config import TIMEZONE
 from datetime import datetime, timedelta
 import calendar
 from zoneinfo import ZoneInfo
-from tg_bot.handlers.common_callbacks import push_state
+from tg_bot.handlers.common_callbacks import push_state, check_stranger_callback
 
 router = Router()
 timezone = ZoneInfo(TIMEZONE)
@@ -76,6 +76,7 @@ def build_calendar(year: int, month: int, selected_date, selected_shift_type) ->
 
 @router.callback_query(F.data == "select_shift")
 async def open_calendar(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if await check_stranger_callback(callback): return
     await callback.answer()
     try:
         now = datetime.now()
@@ -111,6 +112,7 @@ async def open_calendar(callback: CallbackQuery, state: FSMContext, bot: Bot):
 
 @router.callback_query(F.data.startswith("prev_month"))
 async def prev_month(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if await check_stranger_callback(callback): return
     try:
         _, m, y = callback.data.split(":")
         date = datetime(int(y), int(m), 1) - timedelta(days=1)
@@ -134,6 +136,7 @@ async def prev_month(callback: CallbackQuery, state: FSMContext, bot: Bot):
 
 @router.callback_query(F.data.startswith("next_month"))
 async def next_month(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if await check_stranger_callback(callback): return
     try:
         _, m, y = callback.data.split(":")
         date = datetime(int(y), int(m), 28) + timedelta(days=4)
@@ -158,6 +161,7 @@ async def next_month(callback: CallbackQuery, state: FSMContext, bot: Bot):
 
 @router.callback_query(F.data.startswith("day:"))
 async def pick_day(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if await check_stranger_callback(callback): return
     try:
         _, d, m, y = callback.data.split(":")
         selected = datetime(int(y), int(m), int(d)).date()
@@ -184,6 +188,7 @@ async def pick_day(callback: CallbackQuery, state: FSMContext, bot: Bot):
 
 @router.callback_query(F.data.startswith("shift_type:"))
 async def select_shift_type(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if await check_stranger_callback(callback): return
     try:
         _, shift_type = callback.data.split(":")
         from tg_bot.handlers.viewing_shift import render_shift_dashboard
@@ -197,6 +202,7 @@ async def select_shift_type(callback: CallbackQuery, state: FSMContext, bot: Bot
 
 @router.callback_query(F.data == "calendar_back")
 async def back_to_dashboard(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if await check_stranger_callback(callback): return
     from tg_bot.handlers.viewing_shift import render_shift_dashboard
     await state.update_data(state_stack=[], current_state=None)
     await state.set_state(ShiftNavigationState.VIEWING_SHIFT)
@@ -204,5 +210,6 @@ async def back_to_dashboard(callback: CallbackQuery, state: FSMContext, bot: Bot
 
 @router.callback_query(ShiftNavigationState.CALENDAR)
 async def fallback_calendar_handler(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if await check_stranger_callback(callback): return
     print(f"[calendar_navigation] unhandled callback in CALENDAR: {callback.data}")
     await callback.answer("Выберите дату и смену, прежде чем продолжить.", show_alert=True)
