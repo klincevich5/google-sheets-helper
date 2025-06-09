@@ -1,13 +1,12 @@
 # utils/formatting_utils.py
 
-from datetime import datetime
-from zoneinfo import ZoneInfo
+from core.timezone import timezone, now
+import time
 import socket
 # from utils.db_orm import insert_usage
-from utils.logger import log_to_file
-from tabulate import tabulate
-
-from core.config import TIMEZONE
+from utils.logger import (
+    log_info, log_success, log_warning, log_error, log_section, log_separator
+)
 
 # 🎨 Цветовая карта по ключевым словам
 COLOR_MAP = {
@@ -422,8 +421,7 @@ def format_sheet(
     chunk_size=1500
 ):
     try:
-        # log_to_file(log_file, f"🎨 Подготовка форматирования листа '{sheet_title}'...")
-
+        log_section(log_file, "format_sheet", f"🎨 Подготовка форматирования листа '{sheet_title}'")
         sheet_metadata = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
         sheet_id = next(
             (s["properties"]["sheetId"] for s in sheet_metadata["sheets"]
@@ -432,51 +430,31 @@ def format_sheet(
         )
         if sheet_id is None:
             raise ValueError(f"❌ Лист '{sheet_title}' не найден")
-        time = datetime.now(ZoneInfo(TIMEZONE))
-        # print(f"\n\n\n================================================📦 Дата и время: {time}================================================\n\n\n")
-        # print(tabulate(values, headers="keys", tablefmt="grid"))
-
         formatting_requests = build_formatting_requests(values, sheet_id, start_row, start_col, log_file)
         success = True
 
         for i in range(0, len(formatting_requests), chunk_size):
             chunk = formatting_requests[i:i + chunk_size]
-            for attempt in range(3):  # максимум 3 попытки
+            for attempt in range(3):
                 try:
                     service.spreadsheets().batchUpdate(
                         spreadsheetId=spreadsheet_id,
                         body={"requests": chunk}
                     ).execute()
-                    # log_to_file(log_file, f"✅ Отправлена порция форматирования {i}–{i + len(chunk)}.")
+                    log_info(log_file, "format_sheet", None, "batch", f"✅ Отправлена порция форматирования {i}–{i + len(chunk)}.")
                     break
                 except (socket.timeout, Exception) as e:
-                    log_to_file(log_file, f"❌ Попытка {attempt + 1} — ошибка в порции {i}–{i + len(chunk)}: {e}")
+                    log_error(log_file, "format_sheet", None, "fail", f"❌ Попытка {attempt + 1} — ошибка в порции {i}–{i + len(chunk)}", exc=e)
                     if attempt < 2:
                         time.sleep(5)
                     else:
                         success = False
 
-
-        # insert_usage(
-        #     session=session,
-        #     token=token_name,
-        #     count=1,
-        #     scan_group=update_group,
-        #     success=success
-        # )
-
-        # if success:
-        #     log_to_file(log_file, f"✅ Форматирование листа '{sheet_title}' завершено успешно.")
-        # else:
-        #     log_to_file(log_file, f"⚠️ Форматирование листа '{sheet_title}' завершено с ошибками.")
+        if success:
+            log_success(log_file, "format_sheet", None, "done", f"✅ Форматирование листа '{sheet_title}' завершено успешно.")
+        else:
+            log_warning(log_file, "format_sheet", None, "fail", f"⚠️ Форматирование листа '{sheet_title}' завершено с ошибками.")
 
     except Exception as e:
-        log_to_file(log_file, f"❌ Ошибка в format_sheet(): {e}")
-        # insert_usage(
-        #     session=session,
-        #     token=token_name,
-        #     count=1,
-        #     scan_group=update_group,
-        #     success=False
-        # )
+        log_error(log_file, "format_sheet", None, "fail", f"❌ Ошибка в format_sheet()", exc=e)
         raise

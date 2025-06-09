@@ -1,4 +1,4 @@
-# services/db.py
+# tg_bot/services/db.py
 
 # Временно — имитация БД пользователей
 MOCK_USERS = {

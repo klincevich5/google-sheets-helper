@@ -1,3 +1,5 @@
+# utils/utils.py
+
 import time
 import os
 import json
@@ -6,23 +8,32 @@ from googleapiclient.errors import HttpError
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
-from datetime import datetime, timedelta
-from core.config import TIMEZONE
-from zoneinfo import ZoneInfo
+from core.timezone import timezone
+from core.config import RETRIES, DELAY_SECONDS
 
-from utils.logger import log_to_file
+from utils.logger import (
+    log_info, log_success, log_warning, log_error, log_section, log_separator
+)
 # from utils.db_orm import insert_usage
-
-try:
-    timezone = ZoneInfo(TIMEZONE)
-except Exception as e:
-    raise ValueError(f"Некорректное значение TIMEZONE: {TIMEZONE}. Ошибка: {e}")
 
 ##################################################################################
 # Авторизация
 ##################################################################################
 
 def load_credentials(token_path, log_file):
+    """Загружает учетные данные из файла токена и выполняет авторизацию в Google Sheets API.
+
+    Args:
+        token_path (str): Путь к файлу токена.
+        log_file (str): Путь к файлу журнала.
+
+    Returns:
+        service: Объект службы для взаимодействия с Google Sheets API.
+
+    Raises:
+        FileNotFoundError: Если файл токена не найден.
+        RuntimeError: Если токен недействителен.
+    """
     if not os.path.exists(token_path):
         raise FileNotFoundError(f"❌ Файл токена не найден: {token_path}")
 
@@ -46,10 +57,9 @@ def load_credentials(token_path, log_file):
             creds.refresh(Request())
             with open(token_path, "w", encoding="utf-8") as token_file:
                 token_file.write(creds.to_json())
-            log_to_file(log_file, f"🔄 Токен обновлён: {token_path}")
-            
+            log_info(log_file, "load_credentials", None, "token_refresh", f"🔄 Токен обновлён: {token_path}")
         except Exception as e:
-            log_to_file(log_file, f"❌ Ошибка обновления токена {token_path}: {e}")
+            log_error(log_file, "load_credentials", None, "token_refresh_fail", f"❌ Ошибка обновления токена {token_path}", exc=e)
         raise
 
 
@@ -57,7 +67,7 @@ def load_credentials(token_path, log_file):
         raise RuntimeError(f"❌ Недействительный токен: {token_path}")
 
     service = build("sheets", "v4", credentials=creds)
-    log_to_file(log_file, f"✅ Авторизация выполнена: {token_name}")
+    log_success(log_file, "load_credentials", None, "auth", f"✅ Авторизация выполнена: {token_name}")
     success = True
     return service
 
@@ -66,6 +76,18 @@ def load_credentials(token_path, log_file):
 ##################################################################################
 
 def check_sheet_exists(service, spreadsheet_id, sheet_name, log_file, token_name):
+    """Проверяет, существует ли лист с заданным именем в таблице Google Sheets.
+
+    Args:
+        service: Объект службы для взаимодействия с Google Sheets API.
+        spreadsheet_id (str): ID таблицы.
+        sheet_name (str): Имя листа для проверки.
+        log_file (str): Путь к файлу журнала.
+        token_name (str): Имя файла токена.
+
+    Returns:
+        bool: True, если лист существует, иначе False.
+    """
     success = False
     try:
         metadata = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
@@ -78,7 +100,7 @@ def check_sheet_exists(service, spreadsheet_id, sheet_name, log_file, token_name
         return False
 
     except Exception as e:
-        log_to_file(log_file, f"❌ Ошибка при проверке листа в {spreadsheet_id}: {e}")
+        log_error(log_file, "check_sheet_exists", None, "fail", f"❌ Ошибка при проверке листа в {spreadsheet_id}", exc=e)
         return False
 
     finally:
@@ -88,7 +110,22 @@ def check_sheet_exists(service, spreadsheet_id, sheet_name, log_file, token_name
 # Получение данных из Google Sheets
 ##################################################################################
 
-def batch_get(service, spreadsheet_id, ranges, scan_group, log_file, token_name, retries=5, delay_seconds=5):
+def batch_get(service, spreadsheet_id, ranges, scan_group, log_file, token_name, retries=RETRIES, delay_seconds=DELAY_SECONDS):
+    """Получает данные из указанных диапазонов таблицы Google Sheets.
+
+    Args:
+        service: Объект службы для взаимодействия с Google Sheets API.
+        spreadsheet_id (str): ID таблицы.
+        ranges (list): Список диапазонов для получения данных.
+        scan_group: ?
+        log_file (str): Путь к файлу журнала.
+        token_name (str): Имя файла токена.
+        retries (int): Количество попыток в случае ошибки (по умолчанию из конфигурации).
+        delay_seconds (int): Задержка между попытками в секундах (по умолчанию из конфигурации).
+
+    Returns:
+        dict: Словарь с полученными данными, где ключи - это диапазоны, а значения - списки строк данных.
+    """
     attempt = 0
     success = False
     data = {}
@@ -103,7 +140,7 @@ def batch_get(service, spreadsheet_id, ranges, scan_group, log_file, token_name,
 
             value_ranges = response.get("valueRanges", [])
             if not value_ranges:
-                log_to_file(log_file, "⚠️ batchGet вернул пустые valueRanges.")
+                log_warning(log_file, "batch_get", None, "empty", "⚠️ batchGet вернул пустые valueRanges.")
                 attempt += 1
                 time.sleep(delay_seconds)
                 continue
@@ -114,7 +151,7 @@ def batch_get(service, spreadsheet_id, ranges, scan_group, log_file, token_name,
 
         except HttpError as e:
             status_code = e.resp.status
-            log_to_file(log_file, f"❌ HttpError {status_code} при batchGet: {e}")
+            log_error(log_file, "batch_get", None, "http_error", f"❌ HttpError {status_code} при batchGet", exc=e)
             if status_code in (429, 500, 503):
                 attempt += 1
                 time.sleep(delay_seconds)
@@ -129,7 +166,7 @@ def batch_get(service, spreadsheet_id, ranges, scan_group, log_file, token_name,
                 attempt += 1
                 time.sleep(delay_seconds)
             else:
-                log_to_file(log_file, f"❌ Ошибка batchGet: {e}")
+                log_error(log_file, "batch_get", None, "fail", f"❌ Ошибка batchGet", exc=e)
                 break
 
     return data if success else {}
@@ -138,7 +175,23 @@ def batch_get(service, spreadsheet_id, ranges, scan_group, log_file, token_name,
 # Обновление данных в Google Sheets
 ##################################################################################
 
-def batch_update(service, spreadsheet_id, batch_data, token_name, update_group, log_file, retries=3, delay_seconds=10):
+def batch_update(service, spreadsheet_id, batch_data, token_name, update_group, log_file, retries=RETRIES, delay_seconds=DELAY_SECONDS):
+    """Обновляет данные в таблице Google Sheets, записывая их в указанные диапазоны.
+
+    Args:
+        service: Объект службы для взаимодействия с Google Sheets API.
+        spreadsheet_id (str): ID таблицы.
+        batch_data (list): Список данных для записи в таблицу.
+        token_name (str): Имя файла токена.
+        update_group: ?
+        log_file (str): Путь к файлу журнала.
+        retries (int): Количество попыток в случае ошибки (по умолчанию из конфигурации).
+        delay_seconds (int): Задержка между попытками в секундах (по умолчанию из конфигурации).
+
+    Returns:
+        tuple: Кортеж из двух элементов, где первый - булево значение успеха операции,
+               а второй - сообщение об ошибке или None в случае успеха.
+    """
     success = False
     attempt = 0
 
@@ -153,7 +206,7 @@ def batch_update(service, spreadsheet_id, batch_data, token_name, update_group, 
                 body={"ranges": clear_ranges}
             ).execute()
     except Exception as e:
-        log_to_file(log_file, f"⚠️ Ошибка очистки диапазонов: {e}")
+        log_warning(log_file, "batch_update", None, "clear_fail", f"⚠️ Ошибка очистки диапазонов", message=str(e))
 
     # Попытки записи
     while attempt < retries:
@@ -170,13 +223,13 @@ def batch_update(service, spreadsheet_id, batch_data, token_name, update_group, 
                 success = True
                 break
             else:
-                log_to_file(log_file, "⚠️ batchUpdate вернул пустой или некорректный ответ.")
+                log_warning(log_file, "batch_update", None, "empty", "⚠️ batchUpdate вернул пустой или некорректный ответ.")
                 attempt += 1
                 time.sleep(delay_seconds)
 
         except HttpError as e:
             status = e.resp.status
-            log_to_file(log_file, f"❌ HttpError {status} при batchUpdate: {e}")
+            log_error(log_file, "batch_update", None, "http_error", f"❌ HttpError {status} при batchUpdate", exc=e)
             if status in [429, 500, 503]:
                 attempt += 1
                 time.sleep(delay_seconds)
@@ -186,7 +239,7 @@ def batch_update(service, spreadsheet_id, batch_data, token_name, update_group, 
                 break
 
         except Exception as e:
-            log_to_file(log_file, f"❌ Ошибка batchUpdate: {e}")
+            log_error(log_file, "batch_update", None, "fail", f"❌ Ошибка batchUpdate", exc=e)
             break
     
     return (True, None) if success else (False, "Превышено число попыток" if attempt == retries else "Ошибка запроса")

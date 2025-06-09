@@ -1,10 +1,8 @@
 from datetime import datetime, time, timedelta
 from collections import defaultdict
 from sqlalchemy.orm import Session
-from zoneinfo import ZoneInfo
+from core.timezone import timezone
 from database.db_models import MistakeStorage, FeedbackStorage
-
-timezone = ZoneInfo("Europe/Warsaw")
 
 def get_shift_datetime_range(date, shift_type):
     if shift_type == "day":

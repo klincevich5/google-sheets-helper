@@ -32,6 +32,9 @@ TIMEZONE = os.getenv("TIMEZONE", "Europe/Warsaw")
 SHEETINFO_INTERVAL = int(os.getenv("SHEETINFO_INTERVAL", 300))
 ROTATIONSINFO_INTERVAL = int(os.getenv("ROTATIONSINFO_INTERVAL", 60))
 
+RETRIES = int(os.getenv("RETRIES", 3))
+DELAY_SECONDS = int(os.getenv("DELAY_SECONDS", 5))
+
 # --- sqalchemy ---
 SQLALCHEMY_DATABASE_URL = os.getenv("SQLALCHEMY_DATABASE_URL", "postgresql+psycopg2://postgres:qweqwe@localhost:5432/scheduler")
 

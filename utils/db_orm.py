@@ -1,18 +1,10 @@
 # utils/db_orm.py
 
 import json
-from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database.db_models import SheetsInfo, RotationsInfo, MistakeStorage
-from core.config import TIMEZONE
-from zoneinfo import ZoneInfo
-
-# Проверка корректности TIMEZONE
-try:
-    timezone = ZoneInfo(TIMEZONE)
-except Exception as e:
-    raise ValueError(f"Некорректное значение TIMEZONE: {TIMEZONE}. Ошибка: {e}")
+from core.timezone import timezone
 
 MODEL_MAP = {
     "SheetsInfo": SheetsInfo,
@@ -33,7 +25,11 @@ def update_task_scan_fields(session: Session, task, log_file=None, table_name: s
         "scan_quantity": task.scan_quantity,
         "scan_failures": task.scan_failures
     })
-    session.commit()
+    try:
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        raise e
 
 
 def update_task_process_fields(session: Session, task, log_file=None, table_name: str = "SheetsInfo"):
@@ -42,7 +38,11 @@ def update_task_process_fields(session: Session, task, log_file=None, table_name
         "hash": task.hash,
         "values_json": json.dumps(task.values_json) if task.values_json else None
     })
-    session.commit()
+    try:
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        raise e
 
 
 def update_task_update_fields(session: Session, task, log_file=None, table_name: str = "SheetsInfo"):
@@ -52,7 +52,11 @@ def update_task_update_fields(session: Session, task, log_file=None, table_name:
         "update_quantity": task.update_quantity,
         "update_failures": task.update_failures
     })
-    session.commit()
+    try:
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        raise e
 
 
 def get_max_last_row(session: Session, table_name: str) -> int:

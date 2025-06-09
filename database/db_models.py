@@ -1,10 +1,10 @@
 # database/db_models.py
 
-from sqlalchemy import Column, Integer, String, Text, Boolean, Date, Time, DateTime, UniqueConstraint, Enum, BigInteger
+from sqlalchemy import Column, Integer, String, Text, Boolean, Date, Time, DateTime, UniqueConstraint, Enum, BigInteger, ForeignKey
 import enum
 from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY as PG_ARRAY
-
 
 Base = declarative_base()
 
@@ -150,7 +150,7 @@ class TaskTemplate(Base):
     __tablename__ = 'TaskTemplate'
 
     id = Column(Integer, primary_key=True)
-    source_table = Column(String, nullable=False)  # "RotationsInfo" или "SheetsInfo"
+    source_table = Column(String, nullable=False)
     name_of_process = Column(String, unique=True, nullable=False)
 
     source_table_type = Column(String)
@@ -204,7 +204,8 @@ class ScheduleOT(Base):
     shift_type = Column(Text)
     related_month = Column(Date)
 
-    
+
+
 class UserRole(enum.Enum):
     Shuffler = "Shuffler"
     Dealer = "Dealer"
@@ -215,7 +216,13 @@ class UserRole(enum.Enum):
     Trainer_Manager = "Trainer Manager"
     Floor_Manager = "Floor Manager"
     Admin = "Admin"
-    Super_Admin = "Super Admin"
+    Architect = "Architect"
+
+class UserStatus(enum.Enum):
+    RequestedAccess = "requested_access"
+    Employee = "employee"
+    Suspended = "suspended"
+    Rejected = "rejected"
 
 class User(Base):
     __tablename__ = "users"
@@ -225,6 +232,11 @@ class User(Base):
     dealer_name = Column(String, nullable=False)
     role = Column(Enum(UserRole), nullable=False)
     photo_fileID = Column(String, nullable=True, default=None)
+    status = Column(Enum(UserStatus), nullable=False, default=UserStatus.RequestedAccess)
+    approved_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+
+    approved_by = relationship("User", remote_side=[id], backref="approved_users")
 
 
 class QaList(Base):
@@ -258,4 +270,4 @@ class QaList(Base):
     __table_args__ = (
         UniqueConstraint('dealer_name', name='uq_dealer_name'),
     )
-    
+

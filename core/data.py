@@ -1,24 +1,20 @@
 # core/data.py
 
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from database.db_models import TrackedTables, TaskTemplate, RotationsInfo, SheetsInfo
 from core.task_model import Task
-from utils.logger import log_to_file, log_section
-from core.config import TIMEZONE
-
-try:
-    timezone = ZoneInfo(TIMEZONE)
-except Exception as e:
-    raise ValueError(f"Некорректное значение TIMEZONE: {TIMEZONE}. Ошибка: {e}")
+from utils.logger import (
+    log_info, log_success, log_warning, log_error, log_section, log_separator
+)
+from core.timezone import timezone, now
 
 def return_tracked_tables(session: Session) -> dict:
     """Возвращает актуальные table_type -> spreadsheet_id из TrackedTables"""
-    today = datetime.now(timezone).date()
+    today = now().date()
     tables = session.query(TrackedTables).all()
     return {
         table.table_type: table.spreadsheet_id
@@ -26,10 +22,11 @@ def return_tracked_tables(session: Session) -> dict:
         if table.valid_from <= today <= table.valid_to
     }
 
-def get_active_tabs(now=None):
-    now = now or datetime.now(timezone)
-    day = now.day
-    hour = now.hour
+def get_active_tabs(current_time=None):
+    """Определяет активные вкладки в зависимости от текущего времени"""
+    current_time = current_time or now()
+    day = current_time.day
+    hour = current_time.hour
 
     if 9 <= hour < 19:
         return [f"DAY {day}"]
@@ -38,12 +35,13 @@ def get_active_tabs(now=None):
     elif 21 <= hour <= 23:
         return [f"NIGHT {day}"]
     elif 0 <= hour < 7:
-        return [f"NIGHT {(now - timedelta(days=1)).day}"]
+        return [f"NIGHT {(current_time - timedelta(days=1)).day}"]
     elif 7 <= hour < 9:
-        return [f"DAY {day}", f"NIGHT {(now - timedelta(days=1)).day}"]
+        return [f"DAY {day}", f"NIGHT {(current_time - timedelta(days=1)).day}"]
     return []
 
 def parse_datetime(value):
+    """Парсит дату и время из строки или возвращает минимальное значение даты с учетом часового пояса"""
     if isinstance(value, str):
         try:
             value = datetime.fromisoformat(value)
@@ -56,6 +54,7 @@ def parse_datetime(value):
     return value
 
 def build_task(row, now, source_table):
+    """Создает задачу на основе строки данных и источника таблицы"""
     task = Task({
         "id": row.id,
         "is_active": row.is_active,
@@ -84,32 +83,32 @@ def build_task(row, now, source_table):
     return task
 
 def load_rotationsinfo_tasks(session: Session, log_file):
-    log_section("🔼 Фаза определения задач (RotationsInfo)", log_file)
-    now = datetime.now(timezone)
-    related_month = now.replace(day=1).date()
-    active_tabs = get_active_tabs(now)
+    log_section(log_file, "define_tasks", "🔼 Фаза определения задач (RotationsInfo)")
+    now_time = now()
+    related_month = now_time.replace(day=1).date()
+    active_tabs = get_active_tabs(now_time)
 
-    log_to_file(log_file, f"🕒 Сейчас: {now}")
-    log_to_file(log_file, f"📄 Активные смены: {active_tabs}")
+    log_info(log_file, "define_tasks", None, "now", f"🕒 Сейчас: {now_time}")
+    log_info(log_file, "define_tasks", None, "active_tabs", f"📄 Активные смены: {active_tabs}")
 
-    tasks = []
     templates = session.query(TaskTemplate).filter_by(source_table="RotationsInfo").all()
     template_names = [tmpl.name_of_process for tmpl in templates]
-    log_to_file(log_file, f"📚 Найдено шаблонов: {len(templates)}")
+    log_info(log_file, "define_tasks", None, "templates", f"📚 Количество шаблонов: {len(templates)}")
 
-    existing_tasks = session.query(RotationsInfo).filter(
+    all_tasks = session.query(RotationsInfo).filter(
         RotationsInfo.related_month == related_month,
         RotationsInfo.name_of_process.in_(template_names),
         RotationsInfo.source_page_name.in_(active_tabs)
     ).all()
-    log_to_file(log_file, f"📦 Найдено активных задач: {len(existing_tasks)}")
+    log_info(log_file, "define_tasks", None, "db_tasks", f"📦 Количество задач в БД для related_month={related_month}, active_tabs={active_tabs}: {len(all_tasks)}")
 
     existing = {
         (t.name_of_process, t.source_page_name): t
-        for t in existing_tasks
+        for t in all_tasks
     }
 
     new_tasks = []
+    created_count = 0
     for tmpl in templates:
         for tab in active_tabs:
             key = (tmpl.name_of_process, tab)
@@ -131,59 +130,77 @@ def load_rotationsinfo_tasks(session: Session, log_file):
                     scan_quantity=0,
                     scan_failures=0,
                     update_quantity=0,
-                    update_failures=0
+                    update_failures=0,
+                    last_scan=None,
+                    last_update=None,
+                    hash=None,
+                    values_json=None
                 )
                 new_tasks.append(new_task)
                 existing[key] = new_task
-                log_to_file(log_file, f"[✅ CREATE] Задача '{tmpl.name_of_process}' для смены '{tab}' подготовлена.")
+                created_count += 1
+                log_success(log_file, "define_tasks", tmpl.name_of_process, "created", f"Задача '{tmpl.name_of_process}' для смены '{tab}' создана.")
+
+    if created_count == 0:
+        log_success(log_file, "define_tasks", None, "all_exist", "✅ Все задачи по шаблонам уже существуют.")
+    else:
+        log_info(log_file, "define_tasks", None, "created", f"➕ Создано новых задач: {created_count}")
 
     if new_tasks:
         session.bulk_save_objects(new_tasks)
         session.commit()
-        log_to_file(log_file, f"📥 Сохранено новых задач: {len(new_tasks)}")
+        log_success(log_file, "define_tasks", None, "saved", f"📥 Сохранено новых задач: {len(new_tasks)}")
 
-    for task in existing.values():
+    active_tasks = session.query(RotationsInfo).filter(
+        RotationsInfo.related_month == related_month,
+        RotationsInfo.name_of_process.in_(template_names),
+        RotationsInfo.source_page_name.in_(active_tabs),
+        RotationsInfo.is_active == 1
+    ).all()
+    log_info(log_file, "define_tasks", None, "active", f"✅ Количество активных задач: {len(active_tasks)}")
+
+    tasks = []
+    for task in active_tasks:
         last_scan = parse_datetime(task.last_scan)
         next_scan = last_scan + timedelta(seconds=task.scan_interval)
-        minutes_left = int((next_scan - now).total_seconds() / 60)
+        minutes_left = int((next_scan - now_time).total_seconds() / 60)
 
-        log_to_file(log_file, (
+        log_info(log_file, "define_tasks", task.name_of_process, "ready",
             f"[✅READY] Task '{task.name_of_process} {task.source_page_name}' | "
             f"Last scan: {last_scan:%Y-%m-%d %H:%M:%S} | "
             f"Interval: {task.scan_interval // 60} min | "
             f"In: {minutes_left} min | "
             f"Next scan at: {next_scan:%Y-%m-%d %H:%M} | "
-            f"Now: {now:%Y-%m-%d %H:%M:%S}"
-        ))
-        tasks.append(build_task(task, now, "RotationsInfo"))
+            f"Now: {now_time:%Y-%m-%d %H:%M:%S}"
+        )
+        tasks.append(build_task(task, now_time, "RotationsInfo"))
 
-    log_to_file(log_file, f"✅ Готово. Всего задач к запуску: {len(tasks)}")
+    log_success(log_file, "define_tasks", None, "done", f"✅ Готово. Всего задач к запуску: {len(tasks)}")
     return tasks
 
-
 def load_sheetsinfo_tasks(session: Session, log_file):
-    log_section("🔼 Фаза определения задач (SheetsInfo)", log_file)
-    now = datetime.now(timezone)
-    related_month = now.replace(day=1).date()
-    log_to_file(log_file, f"🕒 Сейчас: {now}. related_month: {related_month}")
+    log_section(log_file, "define_tasks", "🔼 Фаза определения задач (SheetsInfo)")
+    now_time = now()
+    related_month = now_time.replace(day=1).date()
+    log_info(log_file, "define_tasks", None, "now", f"🕒 Сейчас: {now_time}. related_month: {related_month}")
 
-    tasks = []
     templates = session.query(TaskTemplate).filter_by(source_table="SheetsInfo").all()
     template_names = [tmpl.name_of_process for tmpl in templates]
-    log_to_file(log_file, f"📚 Найдено шаблонов: {len(templates)}")
+    log_info(log_file, "define_tasks", None, "templates", f"📚 Количество шаблонов: {len(templates)}")
 
-    existing_tasks = session.query(SheetsInfo).filter(
+    all_tasks = session.query(SheetsInfo).filter(
         SheetsInfo.related_month == related_month,
         SheetsInfo.name_of_process.in_(template_names)
     ).all()
-    log_to_file(log_file, f"📦 Найдено активных задач: {len(existing_tasks)}")
+    log_info(log_file, "define_tasks", None, "db_tasks", f"📦 Количество задач в БД для related_month={related_month}: {len(all_tasks)}")
 
     existing = {
         t.name_of_process: t
-        for t in existing_tasks
+        for t in all_tasks
     }
 
     new_tasks = []
+    created_count = 0
     for tmpl in templates:
         if tmpl.name_of_process not in existing:
             new_task = SheetsInfo(
@@ -203,31 +220,49 @@ def load_sheetsinfo_tasks(session: Session, log_file):
                 scan_quantity=0,
                 scan_failures=0,
                 update_quantity=0,
-                update_failures=0
+                update_failures=0,
+                last_scan=None,
+                last_update=None,
+                hash=None,
+                values_json=None
             )
             new_tasks.append(new_task)
             existing[tmpl.name_of_process] = new_task
-            log_to_file(log_file, f"[✅ CREATE] Задача '{tmpl.name_of_process}' подготовлена.")
+            created_count += 1
+            log_success(log_file, "define_tasks", tmpl.name_of_process, "created", f"Задача '{tmpl.name_of_process}' создана.")
+
+    if created_count == 0:
+        log_success(log_file, "define_tasks", None, "all_exist", "✅ Все задачи по шаблонам уже существуют.")
+    else:
+        log_info(log_file, "define_tasks", None, "created", f"➕ Создано новых задач: {created_count}")
 
     if new_tasks:
         session.bulk_save_objects(new_tasks)
         session.commit()
-        log_to_file(log_file, f"📥 Сохранено новых задач: {len(new_tasks)}")
+        log_success(log_file, "define_tasks", None, "saved", f"📥 Сохранено новых задач: {len(new_tasks)}")
 
-    for task in existing.values():
+    active_tasks = session.query(SheetsInfo).filter(
+        SheetsInfo.related_month == related_month,
+        SheetsInfo.name_of_process.in_(template_names),
+        SheetsInfo.is_active == 1
+    ).all()
+    log_info(log_file, "define_tasks", None, "active", f"✅ Количество активных задач: {len(active_tasks)}")
+
+    tasks = []
+    for task in active_tasks:
         last_scan = parse_datetime(task.last_scan)
         next_scan = last_scan + timedelta(seconds=task.scan_interval)
-        minutes_left = int((next_scan - now).total_seconds() / 60)
+        minutes_left = int((next_scan - now_time).total_seconds() / 60)
 
-        log_to_file(log_file, (
+        log_info(log_file, "define_tasks", task.name_of_process, "ready",
             f"[✅READY] Task '{task.name_of_process} {task.source_page_name} related_month {task.related_month} is_active {task.is_active}' | "
             f"Last scan: {last_scan:%Y-%m-%d %H:%M:%S} | "
             f"Interval: {task.scan_interval // 60} min | "
             f"In: {minutes_left} min | "
             f"Next scan at: {next_scan:%Y-%m-%d %H:%M} | "
-            f"Now: {now:%Y-%m-%d %H:%M:%S}"
-        ))
-        tasks.append(build_task(task, now, "SheetsInfo"))
+            f"Now: {now_time:%Y-%m-%d %H:%M:%S}"
+        )
+        tasks.append(build_task(task, now_time, "SheetsInfo"))
 
-    log_to_file(log_file, f"✅ Готово. Всего задач к запуску: {len(tasks)}")
+    log_success(log_file, "define_tasks", None, "done", f"✅ Готово. Всего задач к запуску: {len(tasks)}")
     return tasks

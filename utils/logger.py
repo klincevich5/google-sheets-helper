@@ -1,33 +1,53 @@
 # utils/logger.py
 
+import json
+import traceback
 from datetime import datetime
-from zoneinfo import ZoneInfo
-from core.config import TIMEZONE
-# Часовой пояс
+from core.timezone import timezone, now
 
-def log_separator(log_file):
-    """Добавить длинную линию для логов"""
-    log_to_file(log_file, "-" * 30)
-
-def log_section(title, log_file):
-    """Добавить секцию с заголовком в логах"""
-    try:
-        log_to_file(log_file, "=" * 30)
-        log_to_file(log_file, f"🧩 {title}")
-        log_to_file(log_file, "=" * 30)
-    except Exception as e:
-        print(f"⚠️ Ошибка при log_section: {e}")
-        raise
-
-def log_to_file(log_file, message):
+def _log_structured(log_file, level, phase, task=None, status=None, message=None, error=None):
+    # Добавляем эмодзи к level для наглядности
+    level_emojis = {
+        "INFO": "ℹ️ INFO",
+        "SUCCESS": "✅ SUCCESS",
+        "WARNING": "⚠️ WARNING",
+        "ERROR": "❌ ERROR",
+        "SECTION": "🔷 SECTION"
+    }
+    level_with_emoji = level_emojis.get(level, level)
+    log_entry = {
+        "timestamp": now().strftime('%Y-%m-%d %H:%M:%S'),
+        "level": level_with_emoji,
+        # "error": error,
+        "message": message,
+        "phase": phase,
+        "task": task,
+        "status": status,
+    }
     try:
         with open(log_file, "a", encoding="utf-8") as f:
-            try:
-                timezone = ZoneInfo(TIMEZONE)
-            except Exception as e:
-                raise ValueError(f"Некорректное значение TIMEZONE: {TIMEZONE}. Ошибка: {e}")
-
-            # f.write(f"{datetime.now(timezone).strftime('%Y-%m-%d %H:%M:%S')} — {message}\n")
-            f.write(f"{message}\n")
+            f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
     except Exception as e:
         print(f"Ошибка записи в лог {log_file}: {e}")
+
+def log_info(log_file, phase, task=None, status=None, message=None):
+    _log_structured(log_file, "INFO", phase, task, status, message)
+
+def log_success(log_file, phase, task=None, status=None, message=None):
+    _log_structured(log_file, "SUCCESS", phase, task, status, message)
+
+def log_warning(log_file, phase, task=None, status=None, message=None):
+    _log_structured(log_file, "WARNING", phase, task, status, message)
+
+def log_error(log_file, phase, task=None, status=None, message=None, exc=None):
+    _log_structured(log_file, "ERROR", phase, task, status, message)
+
+def log_section(log_file, phase, message):
+    # Добавляем эмодзи и визуальный разделитель
+    decorated = f"✨✨ {message} ✨✨"
+    _log_structured(log_file, "SECTION", phase, None, None, decorated)
+
+def log_separator(log_file, phase):
+    # Добавляем эмодзи-разделитель
+    decorated = "🟣🟣🟣 " + "━" * 20 + " 🟣🟣🟣"
+    _log_structured(log_file, "INFO", phase, None, None, decorated)
