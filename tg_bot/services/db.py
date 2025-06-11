@@ -43,3 +43,6 @@ async def get_or_create_user(telegram_id: int, dealer_name: str = None) -> dict:
             "approved_at": user.approved_at,
         }
         return user_data
+
+# Импорты сервисов, связанных с БД, статистикой, отчетами и т.д., должны быть только из tg_bot/services/.
+# Проверить, что сервисы не зависят от Telegram.

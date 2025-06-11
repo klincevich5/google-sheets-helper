@@ -122,7 +122,7 @@ def load_rotationsinfo_tasks(session: Session, log_file):
                     scan_interval=tmpl.scan_interval,
                     process_data_method=tmpl.process_data_method,
                     target_table_type=tmpl.target_table_type,
-                    target_page_name=tmpl.target_page_name,
+                    target_page_name=tab,
                     target_page_area=tmpl.target_page_area,
                     update_group=tmpl.update_group,
                     is_active=1,

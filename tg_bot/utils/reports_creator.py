@@ -82,8 +82,12 @@ def generate_studio_report_text(floors: list[str], related_date: date, related_s
     ).all()
 
     if main_floor == "VIP":  # для vip_generic
+        all_sh_feedbacks = db.query(FeedbackStorage).filter(
+            FeedbackStorage.related_date == related_date,
+            FeedbackStorage.related_shift == normalized_shift
+        ).all()
         # Подсчёт SH shuffle-метрик
-        sh_feedbacks = [f for f in feedbacks if f.game == "SH"]
+        sh_feedbacks = [f for f in all_sh_feedbacks if f.game == "SH"]
         total_shuffles = len(sh_feedbacks)
         issues_identified = sum(
             1 for f in sh_feedbacks if any(r.strip().startswith("❗") for r in f.reason.split(","))

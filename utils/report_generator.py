@@ -37,6 +37,7 @@ async def generate_structured_shift_report(date, shift_type, session: Session) -
         FeedbackStorage.date == date,
         FeedbackStorage.shift.ilike(shift_type)
     ).all()
+    
 
     positive_by_gp = defaultdict(list)
     negative_by_gp = defaultdict(list)

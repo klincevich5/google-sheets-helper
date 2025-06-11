@@ -19,16 +19,37 @@ from tg_bot.utils.formatting import (
 from tg_bot.services.db import get_user_role
 
 from tg_bot.handlers.architect.tasks import select_tasks
-from tg_bot.handlers.service_manager.reports import select_report
-from tg_bot.handlers.service_manager.dealers_list import view_dealers_list
-from tg_bot.handlers.service_manager.feedback import view_feedbacks, view_mistakes
-from tg_bot.handlers.service_manager.rotations import select_rotation
+from tg_bot.handlers.manager.reports import select_report
+from tg_bot.handlers.manager.dealers_list import view_dealers_list
+from tg_bot.handlers.manager.feedback import view_feedbacks, view_mistakes
+from tg_bot.handlers.manager.rotations import select_rotation
 from tg_bot.handlers.common_callbacks import contact_info, check_stranger_callback
 from tg_bot.handlers.dealer.feedback import view_my_feedback
 from tg_bot.handlers.dealer.mistakes import view_my_mistakes
 from core.timezone import now
 
 router = Router()
+
+# Временно возвращаем render_shift_dashboard в viewing_shift.py как универсальный роутер, который делегирует вызов нужного render_*_dashboard в зависимости от роли пользователя.
+from tg_bot.handlers.dealer.main import render_dealer_dashboard
+from tg_bot.handlers.manager.main import render_manager_dashboard
+from tg_bot.handlers.architect.main import render_architect_dashboard
+from tg_bot.services.db import get_user_role
+
+async def render_shift_dashboard(msg_or_cb, state, bot):
+    data = await state.get_data()
+    user_id = data.get("user_id") or msg_or_cb.from_user.id
+    role = await get_user_role(user_id)
+    if role.lower() in ("dealer", "shuffler"):
+        await render_dealer_dashboard(msg_or_cb, state, bot)
+    elif role.lower() == "architect":
+        await render_architect_dashboard(msg_or_cb, state, bot)
+    elif role.lower() in ("manager", "qa_manager", "hr_manager", "chief_sm_manager", "trainer_manager", "floor_manager", "admin"):
+        await render_manager_dashboard(msg_or_cb, state, bot)
+    else:
+        # fallback для stranger и неизвестных ролей
+        if hasattr(msg_or_cb, "answer"):
+            await msg_or_cb.answer("⛔️ Access not granted.", show_alert=True)
 
 # --- Buttons ---
 @router.callback_query(F.data == "select_shift", ShiftNavigationState.VIEWING_SHIFT)
@@ -121,77 +142,3 @@ async def view_tasks_callback(callback: CallbackQuery, state: FSMContext, bot: B
     if await check_stranger_callback(callback): return
 
     await select_tasks(callback, state, bot)
-
-# --- Main dashboard rendering (universal) ---
-async def render_shift_dashboard(msg_or_cb: Message | CallbackQuery, state: FSMContext, bot: Bot):
-    data = await state.get_data()
-    user_id = data.get("user_id") or msg_or_cb.from_user.id
-    chat_id = msg_or_cb.chat.id if isinstance(msg_or_cb, Message) else msg_or_cb.message.chat.id
-
-    # Fallback if date or shift type is missing
-    selected_date = data.get("selected_date")
-    selected_shift_type = data.get("selected_shift_type")
-
-    if selected_date is None or selected_shift_type is None:
-        current_time = now()
-        current_shift_type, current_date = get_current_shift_and_date(current_time)
-        selected_date = selected_date or current_date
-        selected_shift_type = selected_shift_type or current_shift_type
-        await state.update_data(
-            selected_date=selected_date,
-            selected_shift_type=selected_shift_type
-        )
-
-    role = await get_user_role(user_id)
-
-    if role.lower() == "stranger":
-        text = "⛔️ Access not granted.\nPlease contact your manager to get access."
-        keyboard = None
-    else:
-        # Universal text and keyboard selection
-        if role.lower() in ("dealer", "shuffler"):
-            text = await get_dealer_main_view(user_id, selected_date, selected_shift_type)
-        elif get_main_menu_keyboard_by_role(role) is not None:
-            # For managers and architect
-            if role.lower() == "architect":
-                text = await get_architect_main_view(user_id, selected_date, selected_shift_type)
-            else:
-                text = await get_sm_main_view(user_id, selected_date, selected_shift_type)
-        else:
-            text = "❌ Your role is not defined."
-        keyboard = get_main_menu_keyboard_by_role(role)
-
-    try:
-        if isinstance(msg_or_cb, CallbackQuery):
-            await msg_or_cb.answer()
-
-            current_text = msg_or_cb.message.text or msg_or_cb.message.caption
-
-            def markup_equal(m1, m2):
-                if m1 is None and m2 is None:
-                    return True
-                if m1 is None or m2 is None:
-                    return False
-                def buttons_to_dicts(markup):
-                    return [[b.__dict__ for b in row] for row in markup.inline_keyboard]
-                return buttons_to_dicts(m1) == buttons_to_dicts(m2)
-
-            if current_text.startswith(text.split("\n")[0]) and markup_equal(msg_or_cb.message.reply_markup, keyboard):
-                await msg_or_cb.message.edit_text(text, reply_markup=keyboard)
-            else:
-                await bot.edit_message_text(
-                    text=text,
-                    chat_id=chat_id,
-                    message_id=msg_or_cb.message.message_id,
-                    reply_markup=keyboard,
-                    disable_web_page_preview=True
-                )
-        else:
-            await bot.send_message(
-                chat_id=chat_id,
-                text=text,
-                reply_markup=keyboard,
-                disable_web_page_preview=True
-            )
-    except Exception as e:
-        print(f"Error in render_shift_dashboard: {e}")

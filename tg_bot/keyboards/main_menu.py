@@ -20,76 +20,11 @@ ROLE_ACCESS_LEVEL = {
 def get_access_level(role: str) -> int:
     return ROLE_ACCESS_LEVEL.get(role.lower().replace(" ", "_"), 0)
 
-# --- Keyboards ---
-
-def get_dealer_keyboard():
-    # Level 1: Dealer, Shuffler
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="📅 Change shift", callback_data="select_shift"),
-            InlineKeyboardButton(text="📍 Current shift", callback_data="select_current_shift")
-        ],
-        [
-            InlineKeyboardButton(text="💬 My feedbacks", callback_data="view_my_feedback"),
-            InlineKeyboardButton(text="⚠️ My mistakes", callback_data="view_my_mistakes")
-        ],
-        [InlineKeyboardButton(text="📞 Contacts", callback_data="contact_info")]
-    ])
-
-def get_manager_keyboard():
-    # Level 2: Manager, QA_Manager, HR_Manager, Chief_SM_Manager, Trainer_Manager, Floor_Manager, Admin
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="📅 Change shift", callback_data="select_shift"),
-            InlineKeyboardButton(text="📍 Current shift", callback_data="select_current_shift")
-        ],
-        [
-            InlineKeyboardButton(text="🧠 Check_user_status", callback_data="select_users")
-        ],
-        [
-            InlineKeyboardButton(text="📋 Shift report", callback_data="select_report"),
-            InlineKeyboardButton(text="🧑‍🤝‍🧑 Dealer list", callback_data="view_dealers_list")
-        ],
-        [
-            InlineKeyboardButton(text="💬 Feedbacks", callback_data="view_shift_feedbacks"),
-            InlineKeyboardButton(text="⚠️ Mistakes", callback_data="view_shift_mistakes")
-        ],
-        [
-            InlineKeyboardButton(text="🔁 Rotation by floor", callback_data="select_rotation")
-        ],
-        [
-            InlineKeyboardButton(text="📞 Contacts", callback_data="contact_info")
-        ]
-    ])
-
-def get_architect_keyboard():
-    # Level 3: Architect
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="📅 Change shift", callback_data="select_shift"),
-            InlineKeyboardButton(text="📍 Current shift", callback_data="select_current_shift")
-        ],
-        [
-            InlineKeyboardButton(text="🧠 View tasks", callback_data="select_tasks"),
-            InlineKeyboardButton(text="🧠 Check_user_status", callback_data="select_users")
-        ],
-        [
-            InlineKeyboardButton(text="📋 Shift report", callback_data="select_report"),
-            InlineKeyboardButton(text="🧑‍🤝‍🧑 Dealer list", callback_data="view_dealers_list")
-        ],
-        [
-            InlineKeyboardButton(text="💬 Feedbacks", callback_data="view_shift_feedbacks"),
-            InlineKeyboardButton(text="⚠️ Mistakes", callback_data="view_shift_mistakes")
-        ],
-        [
-            InlineKeyboardButton(text="🔁 Rotation by floor", callback_data="select_rotation")
-        ],
-        [
-            InlineKeyboardButton(text="📞 Contacts", callback_data="contact_info")
-        ]
-    ])
-
+# --- Универсальный селектор клавиатуры ---
 def get_main_menu_keyboard_by_role(role: str):
+    from tg_bot.keyboards.dealer import get_dealer_keyboard
+    from tg_bot.keyboards.manager import get_manager_keyboard
+    from tg_bot.keyboards.architect import get_architect_keyboard
     level = get_access_level(role)
     if level == 1:
         return get_dealer_keyboard()

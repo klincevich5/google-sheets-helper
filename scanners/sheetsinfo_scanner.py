@@ -695,8 +695,8 @@ class SheetsInfoScanner:
                     ).all()
 
                     if not feedbacks:
-                        dealer.feedback_status = False
-                        output_data.append([dealer.dealer_name, "❌"])
+                        dealer.feedback_status = True
+                        output_data.append([dealer.dealer_name, "✅"])
                         continue
 
                     if any(f.forwarded_feedback is None for f in feedbacks):
@@ -843,22 +843,26 @@ class SheetsInfoScanner:
                         continue
 
                     try:
-                        exists = session.query(QaList).filter_by(
-                            dealer_name=row[0]
-                        ).first()
-                        if exists:
-                            continue
-
-                        qa_item = self._parse_qa_list_row(task, row, row_index, page_name)
-                        if qa_item:
-                            session.add(qa_item)
-                            success_count += 1
+                        with session.no_autoflush:
+                            exists = session.query(QaList).filter_by(
+                                dealer_name=row[0]
+                            ).first()
+                            if exists:
+                                qa_item = self._parse_qa_list_row(task, row, row_index, page_name)
+                                for attr in qa_item.__table__.columns.keys():
+                                    if attr != "id":
+                                        setattr(exists, attr, getattr(qa_item, attr))
+                            else:
+                                qa_item = self._parse_qa_list_row(task, row, row_index, page_name)
+                                if qa_item:
+                                    session.add(qa_item)
+                                    success_count += 1
                     except Exception as row_err:
-                        log_error(self.log_file, "import_qa_list_to_update", task.name_of_process, "row_fail", f"❌ Ошибка при добавлении строки {row_index} из {page_name}: {row_err}. Строка: {row}")
+                        log_error(self.log_file, "import_qa_list_to_update", task.name_of_process, "row_fail", f"❌ Ошибка при добавлении/обновлении строки {row_index} из {page_name}: {row_err}. Строка: {row}")
                         error_count += 1
 
                 session.commit()
-                log_success(self.log_file, "import_qa_list_to_update", task.name_of_process, "imported", f"✅ [{task.name_of_process}] Импортировано QA записей: {success_count}, ошибок: {error_count}")
+                log_success(self.log_file, "import_qa_list_to_update", task.name_of_process, "imported", f"✅ [{task.name_of_process}] Импортировано/обновлено QA записей: {success_count}, ошибок: {error_count}")
                 total_success += success_count
                 total_error += error_count
 
@@ -866,7 +870,7 @@ class SheetsInfoScanner:
                 session.rollback()
                 log_error(self.log_file, "import_qa_list_to_update", task.name_of_process, "task_fail", f"❌ Ошибка при обработке задачи {task.name_of_process}: {task_err}")
 
-        log_success(self.log_file, "import_qa_list_to_update", None, "imported_total", f"✅ Импортировано QA записей всего: {total_success}, ошибок: {total_error}")
+        log_success(self.log_file, "import_qa_list_to_update", None, "imported_total", f"✅ Импортировано/обновлено QA записей всего: {total_success}, ошибок: {total_error}")
 
     def _build_batch_data(self, group_tasks):
         """

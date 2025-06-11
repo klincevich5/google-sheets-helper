@@ -28,7 +28,7 @@ async def view_feedbacks(callback: CallbackQuery, state: FSMContext, bot: Bot):
         ]
 
         text = (
-            f"<b>💬 Feedbacks for {date.strftime('%d %b %Y')} ({shift})</b>\n\n"
+            f"<b>💬 Feedbacks for {date.strftime('%d %b %Y')} — {'🌞 Day' if shift == 'day' else '🌙 Night'} shift</b>\n\n"
             + "\n".join(feedbacks)
         )
 
@@ -64,7 +64,7 @@ async def view_mistakes(callback: CallbackQuery, state: FSMContext, bot: Bot):
         ]
 
         text = (
-            f"<b>⚠️ Mistakes for {date.strftime('%d %b %Y')} ({shift})</b>\n\n"
+            f"<b>⚠️ Mistakes for {date.strftime('%d %b %Y')} — {'🌞 Day' if shift == 'day' else '🌙 Night'} shift</b>\n\n"
             + "\n".join(mistakes)
         )
 

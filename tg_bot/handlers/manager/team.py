@@ -1,4 +1,4 @@
-# handlers/service_manager/team.py
+# handlers/manager/team.py
 
 from aiogram import Router, F
 from aiogram.types import CallbackQuery

@@ -1,3 +1,5 @@
+# tg_bot/handlers/architect/tasks.py
+
 from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -60,8 +62,10 @@ async def list_tasks(callback: CallbackQuery, state: FSMContext, bot: Bot):
                     model.related_month == current_month
                 )
             )
-            tasks = session.execute(stmt.offset(page * PAGE_SIZE).limit(PAGE_SIZE)).scalars().all()
-            total_active = len(session.execute(stmt).scalars().all())
+            # Получаем все задачи для подсчёта и текущую страницу для вывода
+            all_tasks = session.execute(stmt).scalars().all()
+            total_active = len(all_tasks)
+            tasks = all_tasks[page * PAGE_SIZE: (page + 1) * PAGE_SIZE]
 
         if not tasks:
             await callback.answer("No active tasks found", show_alert=True)
@@ -117,6 +121,16 @@ async def task_details(callback: CallbackQuery):
 
     with get_session() as session:
         task = session.get(model, int(task_id))
+        if not task:
+            await callback.answer("Task not found", show_alert=True)
+            return
+        task_data = {k: getattr(task, k, None) for k in [
+            "name_of_process", "source_table_type", "source_page_name", "source_page_area",
+            "scan_group", "last_scan", "scan_interval", "scan_quantity", "scan_failures",
+            "hash", "process_data_method", "values_json",
+            "target_table_type", "target_page_name", "target_page_area",
+            "update_group", "last_update", "update_quantity", "update_failures"
+        ]}
 
     ordered_fields = [
         "name_of_process", "source_table_type", "source_page_name", "source_page_area",
@@ -135,8 +149,6 @@ async def task_details(callback: CallbackQuery):
     }
 
     info = "<b>🧾 Task details:</b>\n\n"
-    task_data = vars(task)
-
     for key in ordered_fields:
         if key not in task_data:
             continue
@@ -146,8 +158,8 @@ async def task_details(callback: CallbackQuery):
             val = val.strftime('%Y-%m-%d %H:%M')
         elif key == "values_json":
             try:
-                parsed = json.loads(val)
-                rows = parsed[:10] if isinstance(parsed, list) else [parsed]
+                parsed = json.loads(val) if val else None
+                rows = parsed[:10] if isinstance(parsed, list) else ([parsed] if parsed else [])
                 val = "\n".join(" • " + json.dumps(r, ensure_ascii=False).replace('"', '')[:120] for r in rows)
             except:
                 val = "⚠️ Invalid JSON"
