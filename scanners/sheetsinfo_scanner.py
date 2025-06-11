@@ -11,7 +11,7 @@ from utils.logger import (
 )
 from utils.db_orm import get_max_last_row
 from utils.floor_resolver import get_floor_by_table_name
-from database.session import SessionLocal
+from database.session import get_session
 
 from database.db_models import MistakeStorage, FeedbackStorage,  ScheduleOT, DealerMonthlyStatus, QaList
 
@@ -53,11 +53,10 @@ class SheetsInfoScanner:
         Основной цикл работы сканера: загрузка задач, сканирование, обработка, обновление.
         """
         while True:
+            if not is_scanner_enabled("sheets_scanner"):
+                time.sleep(10)
+                continue
             try:
-                if not is_scanner_enabled("sheets_scanner"):
-                    time.sleep(10)
-                    continue
-
                 log_separator(self.log_file, "run")
                 log_section(self.log_file, "run", "▶️ SheetsInfo Активен. Новый цикл сканирования\n")
 
@@ -65,7 +64,7 @@ class SheetsInfoScanner:
                 token_path = self.token_map[token_name]
                 self.token_name = token_name
 
-                with SessionLocal() as session:
+                with get_session() as session:
                     self.service = load_credentials(token_path, self.log_file)
                     log_info(self.log_file, "run", None, "token", f"Используется токен: {self.token_name}")
 
@@ -88,7 +87,9 @@ class SheetsInfoScanner:
                 log_error(self.log_file, "run", None, "fail", "Критическая ошибка в основном цикле", exc=e)
                 time.sleep(10)
 
-            time.sleep(SHEETINFO_INTERVAL)
+            # Гарантированная задержка между циклами (не менее 3 секунд)
+            interval = max(SHEETINFO_INTERVAL, 3)
+            time.sleep(interval)
 
     def _validate_sheet(self, sheet):
         """

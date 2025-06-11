@@ -1,6 +1,5 @@
 from collections import defaultdict
 from datetime import date
-from sqlalchemy.orm import Session
 from database.db_models import MistakeStorage, FeedbackStorage
 
 
@@ -36,7 +35,7 @@ def is_reworked(fb) -> bool:
     return fb.forwarded_feedback and fb.forwarded_feedback.strip()
 
 
-def generate_studio_report_text(floors: list[str], related_date: date, related_shift: str, db: Session) -> str:
+def generate_studio_report_text(floors: list[str], related_date: date, related_shift: str, db) -> str:
     floor_titles = {
         "GSBJ": "Live88 Gaming Floor (GS)",
         "VIP": "Live88 Gaming Floor",

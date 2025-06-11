@@ -17,6 +17,7 @@ from database.db_models import (
     SheetsInfo
 )
 from core.monitoring_storage_model import MonitoringStorageTask
+from database.session import get_session
 
 ################################################################################################
 # Функция для красивого вывода информации о дилере
@@ -204,8 +205,8 @@ class MonitoringStorageScanner:
                 self._save(task)
             except Exception as e:
                 log_info(MONITORING_LOG, f"⚠ Ошибка для {dealer_name}: {e}")
-            # finally:
-            #     time.sleep(15)  # Задержка между обработкой дилеров
+            finally:
+                _time.sleep(1)  # Задержка между обработкой дилеров (1 секунда)
     
 
     def _convert_to_task_dict(self, dealer_name, nicknames, data):
@@ -588,8 +589,7 @@ class MonitoringStorageScanner:
 
 if __name__ == "__main__":
     # Пример инициализации (замените на свою реальную инициализацию)
-    from database.session import SessionLocal
-    session = SessionLocal()
+    session = next(get_session())
     monitoring_tokens = None  # или подставьте реальные токены
     doc_id_map = None        # или подставьте реальную карту id
     scanner = MonitoringStorageScanner(session, monitoring_tokens, doc_id_map)

@@ -5,7 +5,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from tg_bot.states.shift_navigation import ShiftNavigationState
 from tg_bot.handlers.common_callbacks import push_state, check_stranger_callback
-from database.session import SessionLocal
+from database.session import get_session
 from tg_bot.utils.reports_creator import generate_studio_report_text
 from tg_bot.utils.utils import get_current_shift_and_date
 from datetime import datetime
@@ -92,7 +92,7 @@ async def view_report(callback: CallbackQuery, state: FSMContext, bot):
         floors = report_floors.get(studio_key.lower(), [])
 
         def get_report():
-            with SessionLocal() as db:
+            with get_session() as db:
                 return generate_studio_report_text(
                     floors=floors,
                     related_date=related_date,

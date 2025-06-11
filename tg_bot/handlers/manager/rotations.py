@@ -10,7 +10,7 @@ from core.config import TIMEZONE, ROTATION_ORDER
 from tg_bot.states.shift_navigation import ShiftNavigationState
 from tg_bot.handlers.common_callbacks import push_state, check_stranger_callback
 from database.db_models import RotationsInfo
-from database.session import SessionLocal
+from database.session import get_session
 
 router = Router()
 
@@ -58,8 +58,7 @@ async def view_rotation_detail(callback: CallbackQuery, state: FSMContext, bot: 
     first_of_month = datetime(selected_date.year, selected_date.month, 1, tzinfo=timezone)
     source_page_name = f"{selected_shift_type.upper()} {selected_date.day}"
 
-    session = SessionLocal()
-    try:
+    with get_session() as session:
         stmt = select(RotationsInfo).where(
             RotationsInfo.related_month == first_of_month,
             RotationsInfo.name_of_process == process_name,
@@ -67,8 +66,6 @@ async def view_rotation_detail(callback: CallbackQuery, state: FSMContext, bot: 
         )
         result = session.execute(stmt)
         rotation: RotationsInfo = result.scalars().first()
-    finally:
-        session.close()
 
     if not rotation or not rotation.values_json:
         # ⛔ Очистим выбранный процесс и страницу

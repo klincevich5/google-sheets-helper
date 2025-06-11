@@ -6,7 +6,7 @@ from tg_bot.states.shift_navigation import ShiftNavigationState
 from tg_bot.handlers.common_callbacks import push_state, check_stranger_callback
 from tg_bot.utils.utils import get_current_shift_and_date
 from tg_bot.utils.dealers_list_creator import generate_dealers_list_text
-from database.session import SessionLocal
+from database.session import get_session
 from datetime import datetime
 from core.config import TIMEZONE
 from zoneinfo import ZoneInfo
@@ -44,7 +44,7 @@ async def view_dealers_list(callback: CallbackQuery, state: FSMContext, bot):
             )
 
         def load_data():
-            with SessionLocal() as db:
+            with get_session() as db:
                 return generate_dealers_list_text(db, related_date, related_shift)
 
         message_text = await asyncio.to_thread(load_data)

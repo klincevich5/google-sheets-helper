@@ -18,11 +18,11 @@ def _log_structured(log_file, level, phase, task=None, status=None, message=None
     log_entry = {
         "timestamp": now().strftime('%Y-%m-%d %H:%M:%S'),
         "level": level_with_emoji,
-        # "error": error,
         "message": message,
         "phase": phase,
         "task": task,
         "status": status,
+        "error": error,
     }
     try:
         with open(log_file, "a", encoding="utf-8") as f:

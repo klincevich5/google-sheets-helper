@@ -9,7 +9,7 @@ from utils.logger import (
     log_info, log_success, log_warning, log_error, log_section, log_separator
 )
 from utils.formatting_utils import format_sheet
-from database.session import SessionLocal
+from database.session import get_session
 
 from core.config import (
     ROTATIONSINFO_LOG,
@@ -37,11 +37,10 @@ class RotationsInfoScanner:
 
     def run(self):
         while True:
+            if not is_scanner_enabled("rotations_scanner"):
+                time.sleep(10)
+                continue
             try:
-                if not is_scanner_enabled("rotations_scanner"):
-                    time.sleep(10)
-                    continue
-
                 log_separator(self.log_file, "run")
                 log_section(self.log_file, "run", "▶️ RotationsInfo Активен. Новый цикл сканирования\n")
 
@@ -49,7 +48,7 @@ class RotationsInfoScanner:
                 token_path = self.token_map[token_name]
                 self.token_name = token_name
 
-                with SessionLocal() as session:
+                with get_session() as session:
                     self.service = load_credentials(token_path, self.log_file)
                     log_info(self.log_file, "run", None, "token", f"Используется токен: {self.token_name}")
 
@@ -72,7 +71,13 @@ class RotationsInfoScanner:
                 log_error(self.log_file, "run", None, "fail", "Критическая ошибка в основном цикле", exc=e)
                 time.sleep(10)
 
-            time.sleep(ROTATIONSINFO_INTERVAL)
+            # Гарантированная задержка между циклами (не менее 3 секунд)
+            interval = max(ROTATIONSINFO_INTERVAL, 3)
+            time.sleep(interval)
+
+#############################################################################################
+# загрузка задач из БД
+#############################################################################################
 
     def load_tasks(self, session):
         log_section(self.log_file, "load_tasks", "📥 Загрузка задач из RotationsInfo")
@@ -87,6 +92,10 @@ class RotationsInfoScanner:
                 skipped += 1
                 log_warning(self.log_file, "load_tasks", getattr(task, 'name_of_process', None), "skipped", "Нет doc_id, задача пропущена")
         log_info(self.log_file, "load_tasks", None, "done", f"Загружено задач: {len(self.tasks)}, пропущено без doc_id: {skipped}\n")
+
+#############################################################################################
+# Фаза сканирования
+#############################################################################################
 
     def scan_phase(self, session):
         phase = "scan_phase"

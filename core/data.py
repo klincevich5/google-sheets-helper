@@ -2,7 +2,6 @@
 
 from datetime import datetime, timedelta
 
-from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from database.db_models import TrackedTables, TaskTemplate, RotationsInfo, SheetsInfo
@@ -12,7 +11,7 @@ from utils.logger import (
 )
 from core.timezone import timezone, now
 
-def return_tracked_tables(session: Session) -> dict:
+def return_tracked_tables(session) -> dict:
     """Возвращает актуальные table_type -> spreadsheet_id из TrackedTables"""
     today = now().date()
     tables = session.query(TrackedTables).all()
@@ -82,7 +81,7 @@ def build_task(row, now, source_table):
     task.source_table = source_table
     return task
 
-def load_rotationsinfo_tasks(session: Session, log_file):
+def load_rotationsinfo_tasks(session, log_file):
     log_section(log_file, "define_tasks", "🔼 Фаза определения задач (RotationsInfo)")
     now_time = now()
     related_month = now_time.replace(day=1).date()
@@ -178,7 +177,7 @@ def load_rotationsinfo_tasks(session: Session, log_file):
     log_success(log_file, "define_tasks", None, "done", f"✅ Готово. Всего задач к запуску: {len(tasks)}")
     return tasks
 
-def load_sheetsinfo_tasks(session: Session, log_file):
+def load_sheetsinfo_tasks(session, log_file):
     log_section(log_file, "define_tasks", "🔼 Фаза определения задач (SheetsInfo)")
     now_time = now()
     related_month = now_time.replace(day=1).date()

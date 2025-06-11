@@ -1,7 +1,6 @@
 # utils/db_orm.py
 
 import json
-from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database.db_models import SheetsInfo, RotationsInfo, MistakeStorage
 from core.timezone import timezone
@@ -18,7 +17,7 @@ def get_model_by_table_name(table_name: str):
     return model
 
 
-def update_task_scan_fields(session: Session, task, log_file=None, table_name: str = "SheetsInfo"):
+def update_task_scan_fields(session, task, log_file=None, table_name: str = "SheetsInfo"):
     model = get_model_by_table_name(table_name)
     session.query(model).filter(model.id == task.id).update({
         "last_scan": task.last_scan.isoformat() if task.last_scan else None,
@@ -32,7 +31,7 @@ def update_task_scan_fields(session: Session, task, log_file=None, table_name: s
         raise e
 
 
-def update_task_process_fields(session: Session, task, log_file=None, table_name: str = "SheetsInfo"):
+def update_task_process_fields(session, task, log_file=None, table_name: str = "SheetsInfo"):
     model = get_model_by_table_name(table_name)
     session.query(model).filter(model.id == task.id).update({
         "hash": task.hash,
@@ -45,7 +44,7 @@ def update_task_process_fields(session: Session, task, log_file=None, table_name
         raise e
 
 
-def update_task_update_fields(session: Session, task, log_file=None, table_name: str = "SheetsInfo"):
+def update_task_update_fields(session, task, log_file=None, table_name: str = "SheetsInfo"):
     model = get_model_by_table_name(table_name)
     session.query(model).filter(model.id == task.id).update({
         "last_update": task.last_update.isoformat() if task.last_update else None,
@@ -59,7 +58,7 @@ def update_task_update_fields(session: Session, task, log_file=None, table_name:
         raise e
 
 
-def get_max_last_row(session: Session, table_name: str) -> int:
+def get_max_last_row(session, table_name: str) -> int:
     """
     Возвращает максимальный last_row из MistakeStorage для заданной таблицы.
     """

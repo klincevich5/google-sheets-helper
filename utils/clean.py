@@ -30,5 +30,5 @@ def clear_db(table_name: str):
         print(f"✅ Таблица {table_name} успешно очищена.")
 
 if __name__ == "__main__":
-    # clear_db(table_name="RotationsInfo")
+    clear_db(table_name="RotationsInfo")
     clear_db(table_name="SheetsInfo")

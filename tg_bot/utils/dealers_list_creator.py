@@ -1,4 +1,3 @@
-from sqlalchemy.orm import Session
 from database.db_models import ScheduleOT
 from datetime import date
 
@@ -7,7 +6,7 @@ def normalize_shift(shift: str) -> str:
     return "Day" if shift.strip().lower().startswith("day") else "Night"
 
 
-def generate_dealers_list_text(db: Session, selected_date: date, shift: str) -> str:
+def generate_dealers_list_text(db, selected_date: date, shift: str) -> str:
     shift_type = normalize_shift(shift)  # "Day" или "Night"
     shift_label = f"{shift_type} shift"
 

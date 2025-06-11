@@ -1,6 +1,5 @@
 from datetime import datetime, time, timedelta
 from collections import defaultdict
-from sqlalchemy.orm import Session
 from core.timezone import timezone
 from database.db_models import MistakeStorage, FeedbackStorage
 
@@ -13,7 +12,7 @@ def get_shift_datetime_range(date, shift_type):
         end = datetime.combine(date + timedelta(days=1), time(9, 0), tzinfo=timezone)
     return start, end
 
-async def generate_structured_shift_report(date, shift_type, session: Session) -> str:
+async def generate_structured_shift_report(date, shift_type, session) -> str:
     shift_start, shift_end = get_shift_datetime_range(date, shift_type)
     date_str = date.strftime("%d.%m.%Y")
     shift_label = shift_type.capitalize()
