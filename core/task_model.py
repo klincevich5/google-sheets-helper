@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from core.methods import PROCESSORS
 from core.config import TIMEZONE
+from core.time_provider import TimeProvider
 
 
 class Task:
@@ -71,20 +72,31 @@ class Task:
         if not self.last_scan:
             return True
         next_scan_time = self.last_scan + timedelta(seconds=self.scan_interval)
-        return datetime.now(ZoneInfo(TIMEZONE)) >= next_scan_time
+        return TimeProvider.now() >= next_scan_time
 
     def assign_doc_ids(self, doc_id_map):
+        from utils.logger import log_warning
+        self.source_doc_id = None
+        self.target_doc_id = None
+        if not getattr(self, 'source_table_type', None):
+            log_warning(None, "assign_doc_ids", getattr(self, 'name_of_process', None), "no_source_type", "Нет source_table_type у задачи")
+            return False
         self.source_doc_id = doc_id_map.get(self.source_table_type)
-
-        if self.target_table_type == "nothing":
+        if self.source_doc_id is None:
+            log_warning(None, "assign_doc_ids", getattr(self, 'name_of_process', None), "no_source_doc_id", f"Не найден source_doc_id для {self.source_table_type}")
+        if getattr(self, 'target_table_type', None) == "nothing":
             self.target_doc_id = "nothing"
-        else:
+        elif getattr(self, 'target_table_type', None):
             self.target_doc_id = doc_id_map.get(self.target_table_type)
+            if self.target_doc_id is None:
+                log_warning(None, "assign_doc_ids", getattr(self, 'name_of_process', None), "no_target_doc_id", f"Не найден target_doc_id для {self.target_table_type}")
+        else:
+            log_warning(None, "assign_doc_ids", getattr(self, 'name_of_process', None), "no_target_type", "Нет target_table_type у задачи")
         return self.source_doc_id is not None and self.target_doc_id is not None
         
     def update_after_scan(self, success: bool):
         if success:
-            self.last_scan = datetime.now(ZoneInfo(TIMEZONE))
+            self.last_scan = TimeProvider.now()
             self.scan_quantity += 1
             self.scan_failures = 0
             self.scanned = 1  # флаг, что задачу нужно обрабатывать
@@ -138,7 +150,7 @@ class Task:
 
     def update_after_upload(self, success):
         if success:
-            self.last_update = datetime.now(ZoneInfo(TIMEZONE))
+            self.last_update = TimeProvider.now()
             self.update_quantity += 1
             self.uploaded = 1  # флаг, что задача была выгружена
         else:

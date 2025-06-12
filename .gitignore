@@ -36,4 +36,3 @@ alembic/versions/
 
 alembic.ini
 alembic/script.py.mako
-db_creator/scheduler.db

@@ -1,6 +1,6 @@
 # utils/formatting_utils.py
 
-from core.timezone import timezone, now
+from core.time_provider import TimeProvider
 import time
 import socket
 # from utils.db_orm import insert_usage

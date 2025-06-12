@@ -15,9 +15,15 @@ AUTHORIZED_USERS = [
 
 # --- Пути к логам ---
 MAIN_LOG = os.getenv("MAIN_LOG", "logs/scanner.log")
+
 ROTATIONSINFO_LOG = os.getenv("ROTATIONSINFO_LOG", "logs/scanner_rotationsinfo.log")
+ROTATIONSINFO_RETRO_LOG = os.getenv("ROTATIONSINFO_RETRO_LOG", "logs/scanner_rotationsinfo_retro.log")
+
 SHEETSINFO_LOG = os.getenv("SHEETSINFO_LOG", "logs/scanner_sheetsinfo.log")
+SHEETSINFO_RETRO_LOG = os.getenv("SHEETSINFO_RETRO_LOG", "logs/scanner_sheetsinfo_retro.log")
+
 MONITORING_LOG = os.getenv("MONITORING_LOG", "logs/scanner_monitoring.log")
+MONITORING_RETRO_LOG = os.getenv("MONITORING_RETRO_LOG", "logs/scanner_monitoring_retro.log")
 
 # --- Параметры Google API ---
 SHEETSINFO_TOKEN = os.getenv("SHEETSINFO_TOKEN", "tokens/current/SheetsInfo_scanner_1_token.json")
