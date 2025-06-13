@@ -37,15 +37,10 @@ class SheetsInfoScanner:
     SheetsInfoScanner — основной исполнительный класс для сканирования, обработки и обновления задач по Google Sheets.
     """
 
-    def __init__(self, token_map, doc_id_map):
-        """
-        Инициализация сканера.
-        :param token_map: словарь токенов для Google Sheets API
-        :param doc_id_map: словарь doc_id для отслеживаемых таблиц
-        """
+    def __init__(self, token_map, log_file=None):
+        from core.config import SHEETSINFO_LOG
         self.token_map = token_map
-        self.doc_id_map = doc_id_map
-        self.log_file = SHEETSINFO_LOG
+        self.log_file = log_file if log_file is not None else SHEETSINFO_LOG
         self.tasks = []
 
     def run(self):
@@ -67,7 +62,10 @@ class SheetsInfoScanner:
                 with get_session() as session:
                     self.service = load_credentials(token_path, self.log_file)
                     log_info(self.log_file, "run", None, "token", f"Используется токен: {self.token_name}")
-
+                    # <--- ДОБАВЛЕНО: актуализируем doc_id_map перед фазами --->
+                    from core.data import return_tracked_tables
+                    self.doc_id_map = return_tracked_tables(session)
+                    # <--- КОНЕЦ ДОБАВЛЕНИЯ --->
                     for phase_name, method in [
                         ("load_tasks", lambda: self.load_tasks(session)),
                         ("scan_phase", lambda: self.scan_phase(session)),

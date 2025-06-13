@@ -75,10 +75,13 @@ def pretty_print_dealer_info(info):
 #################################################################################################
 
 class MonitoringStorageScanner:
-    def __init__(self, session, monitoring_tokens, doc_id_map):
-        self.session = session
-        self.doc_id_map = doc_id_map
+    def __init__(self, token_map, log_file=None):
+        from core.config import MONITORING_LOG
+        self.token_map = token_map
+        self.log_file = log_file if log_file is not None else MONITORING_LOG
         self.date = datetime.now().date()
+        self.tasks = []
+
         log_info(MONITORING_LOG, f"🌀 Дата: {self.date}")
 
         # --- Bulk load all needed data into memory for fast access ---
@@ -188,25 +191,34 @@ class MonitoringStorageScanner:
         # log_info(MONITORING_LOG, f"[ROTATION-DB] Итоговые ключи: {list(self.rotations_by_floor_date_shift.keys())}")
 
     def run(self):
-        self._load_caches()  # <-- теперь кэш обновляется для каждой даты/смены
-        # log_info(MONITORING_LOG, f"🌀 Запуск MonitoringStorageScanner на {self.date}")
-
-        import time as _time
-        dealers = self._get_all_dealers()
-        for idx, (dealer_name, nicknames) in enumerate(dealers, 1):
+        from core.data import return_tracked_tables
+        while True:
             try:
-                t0 = _time.time()
-                # log_info(MONITORING_LOG, f"\n🌀 Обработка дилера {idx}/{len(dealers)}: {dealer_name} с никнеймами: {nicknames}\n")
-                data = self._build_json(dealer_name, nicknames)
-                t1 = _time.time()
-                # log_info(MONITORING_LOG, f"\n🌀 Получены данные для {dealer_name} (поиск занял {t1-t0:.3f} сек):")
-                task = MonitoringStorageTask(self._convert_to_task_dict(dealer_name, nicknames, data))
-                # pretty_print_dealer_info(task.__dict__)
-                self._save(task)
+                with get_session() as session:
+                    self.doc_id_map = return_tracked_tables(session)
+                    self.session = session
+                    self._load_caches()
+                    # log_info(MONITORING_LOG, f"🌀 Запуск MonitoringStorageScanner на {self.date}")
+
+                    import time as _time
+                    dealers = self._get_all_dealers()
+                    for idx, (dealer_name, nicknames) in enumerate(dealers, 1):
+                        try:
+                            t0 = _time.time()
+                            # log_info(MONITORING_LOG, f"\n🌀 Обработка дилера {idx}/{len(dealers)}: {dealer_name} с никнеймами: {nicknames}\n")
+                            data = self._build_json(dealer_name, nicknames)
+                            t1 = _time.time()
+                            # log_info(MONITORING_LOG, f"\n🌀 Получены данные для {dealer_name} (поиск занял {t1-t0:.3f} сек):")
+                            task = MonitoringStorageTask(self._convert_to_task_dict(dealer_name, nicknames, data))
+                            # pretty_print_dealer_info(task.__dict__)
+                            self._save(task)
+                        except Exception as e:
+                            log_info(MONITORING_LOG, f"⚠ Ошибка для {dealer_name}: {e}")
+                        finally:
+                            _time.sleep(1)  # Задержка между обработкой дилеров (1 секунда)
             except Exception as e:
-                log_info(MONITORING_LOG, f"⚠ Ошибка для {dealer_name}: {e}")
-            finally:
-                _time.sleep(1)  # Задержка между обработкой дилеров (1 секунда)
+                log_error(MONITORING_LOG, "run", None, "fail", f"Критическая ошибка в MonitoringStorageScanner: {e}", exc=e)
+                time.sleep(10)
     
 
     def _convert_to_task_dict(self, dealer_name, nicknames, data):

@@ -29,10 +29,10 @@ from utils.utils import (
 )
 
 class RotationsInfoScanner:
-    def __init__(self, token_map, doc_id_map):
+    def __init__(self, token_map, log_file=None):
+        from core.config import ROTATIONSINFO_LOG
         self.token_map = token_map
-        self.doc_id_map = doc_id_map
-        self.log_file = ROTATIONSINFO_LOG
+        self.log_file = log_file if log_file is not None else ROTATIONSINFO_LOG
         self.tasks = []
 
     def run(self):
@@ -52,6 +52,9 @@ class RotationsInfoScanner:
                     self.service = load_credentials(token_path, self.log_file)
                     log_info(self.log_file, "run", None, "token", f"Используется токен: {self.token_name}")
 
+                    from core.data import return_tracked_tables
+                    self.doc_id_map = return_tracked_tables(session)
+                    
                     for phase_name, method in [
                         ("load_tasks", lambda: self.load_tasks(session)),
                         ("scan_phase", lambda: self.scan_phase(session)),
@@ -81,16 +84,25 @@ class RotationsInfoScanner:
 
     def load_tasks(self, session):
         log_section(self.log_file, "load_tasks", "📥 Загрузка задач из RotationsInfo")
-        self.tasks = load_rotationsinfo_tasks(session, self.log_file)
+        try:
+            self.tasks = load_rotationsinfo_tasks(session, self.log_file)
+        except Exception as e:
+            log_error(self.log_file, "load_tasks", None, "fail", f"Ошибка при загрузке задач: {e}", exc=e)
+            self.tasks = []
+            return
         if not self.tasks:
             log_info(self.log_file, "load_tasks", None, "empty", "Нет активных задач для сканирования")
             self.tasks = []
             return
         skipped = 0
         for task in self.tasks:
-            if not task.assign_doc_ids(self.doc_id_map):
+            try:
+                if not task.assign_doc_ids(self.doc_id_map):
+                    skipped += 1
+                    log_warning(self.log_file, "load_tasks", getattr(task, 'name_of_process', None), "skipped", "Нет doc_id, задача пропущена")
+            except Exception as e:
+                log_error(self.log_file, "load_tasks", getattr(task, 'name_of_process', None), "fail", f"Ошибка при assign_doc_ids: {e}", exc=e)
                 skipped += 1
-                log_warning(self.log_file, "load_tasks", getattr(task, 'name_of_process', None), "skipped", "Нет doc_id, задача пропущена")
         log_info(self.log_file, "load_tasks", None, "done", f"Загружено задач: {len(self.tasks)}, пропущено без doc_id: {skipped}\n")
 
 #############################################################################################
