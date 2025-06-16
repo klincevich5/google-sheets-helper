@@ -32,7 +32,7 @@ class RotationsInfoScanner:
     def __init__(self, token_map, log_file=None):
         from core.config import ROTATIONSINFO_LOG
         self.token_map = token_map
-        self.log_file = log_file if log_file is not None else ROTATIONSINFO_LOG
+        self.log_file = log_file if log_file else (ROTATIONSINFO_LOG if ROTATIONSINFO_LOG else "logs/scanner_rotationsinfo.log")
         self.tasks = []
 
     def run(self):
@@ -72,7 +72,10 @@ class RotationsInfoScanner:
 
             except Exception as e:
                 log_error(self.log_file, "run", None, "fail", "Критическая ошибка в основном цикле", exc=e)
-                time.sleep(10)
+                print("❌ Критическая ошибка в основном цикле. Подробности записаны в лог.")
+                interval = max(ROTATIONSINFO_INTERVAL, 3)   
+                time.sleep(interval)
+                break
 
             # Гарантированная задержка между циклами (не менее 3 секунд)
             interval = max(ROTATIONSINFO_INTERVAL, 3)
@@ -97,7 +100,7 @@ class RotationsInfoScanner:
         skipped = 0
         for task in self.tasks:
             try:
-                if not task.assign_doc_ids(self.doc_id_map):
+                if not task.assign_doc_ids(self.doc_id_map, self.log_file):
                     skipped += 1
                     log_warning(self.log_file, "load_tasks", getattr(task, 'name_of_process', None), "skipped", "Нет doc_id, задача пропущена")
             except Exception as e:
@@ -122,8 +125,8 @@ class RotationsInfoScanner:
             return
         scan_groups = defaultdict(list)
         for task in ready_tasks:
-            if not task.assign_doc_ids(self.doc_id_map):
-                log_warning(self.log_file, phase, getattr(task, 'name_of_process', None), "skipped", "Не удалось сопоставить doc_id. Пропуск.")
+            if not task.assign_doc_ids(self.doc_id_map, self.log_file):
+                log_warning(self.log_file, phase, getattr(task, 'name_of_process', None), "skipped", f"Не удалось сопоставить doc_id для задачи: {task}. Пропуск.")
                 continue
             scan_groups[task.scan_group].append(task)
         for scan_group, group_tasks in scan_groups.items():
@@ -204,6 +207,7 @@ class RotationsInfoScanner:
     #############################################################################################
 
     def process_phase(self, session):
+        from core.methods import process_full_rotation, process_full_turkish_rotation
         log_section(self.log_file, "process_phase", "🛠️ Фаза обработки")
         if not self.tasks:
             log_info(self.log_file, "process_phase", None, "empty", "Нет задач для обработки")
@@ -212,11 +216,19 @@ class RotationsInfoScanner:
             if task.scanned == 0:
                 continue
             try:
+                # Выбор нужного процессора
+                if getattr(task, 'name_of_process', None) == "TURKISH Main":
+                    processor = process_full_turkish_rotation
+                else:
+                    processor = process_full_rotation
+                # 1. Обработка сырых данных через нужный процессор
                 try:
-                    task.process_raw_value()
+                    processed_full = processor(task.raw_values_json, task.source_page_area)
                 except Exception as e:
-                    log_error(self.log_file, "process_phase", task.name_of_process, "fail", "Ошибка в process_raw_value", exc=e)
+                    log_error(self.log_file, "process_phase", task.name_of_process, "fail", f"Ошибка в {processor.__name__}", exc=e)
                     continue
+                # 2. Проверка изменений и сохранение в БД, если нужно
+                task.values_json = processed_full
                 try:
                     task.check_for_update()
                 except Exception as e:
@@ -225,9 +237,14 @@ class RotationsInfoScanner:
                 if task.changed:
                     try:
                         update_task_process_fields(session, task, self.log_file, table_name="RotationsInfo")
-                        log_success(self.log_file, "process_phase", task.name_of_process, "changed", "Данные изменены и сохранены")
+                        log_success(self.log_file, "process_phase", task.name_of_process, "changed", f"Данные изменены и сохранены ({processor.__name__})")
                     except Exception as e:
                         log_error(self.log_file, "process_phase", task.name_of_process, "fail", "Ошибка при сохранении изменений в БД", exc=e)
+                # 3. Обычная обработка для логики (не сохраняется в БД)
+                try:
+                    task.process_raw_value()
+                except Exception as e:
+                    log_error(self.log_file, "process_phase", task.name_of_process, "fail", "Ошибка в process_raw_value (логика)", exc=e)
             except Exception as e:
                 log_error(self.log_file, "process_phase", task.name_of_process, "fail", "Неизвестная ошибка при обработке", exc=e)
         log_info(self.log_file, "process_phase", None, "summary", "\n".join(

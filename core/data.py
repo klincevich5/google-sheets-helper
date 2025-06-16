@@ -26,6 +26,7 @@ def get_active_tabs(current_time=None):
     current_time = current_time or TimeProvider.now()
     day = current_time.day
     hour = current_time.hour
+    prev_day = (current_time - timedelta(days=1))
 
     if 9 <= hour < 19:
         return [f"DAY {day}"]
@@ -34,9 +35,15 @@ def get_active_tabs(current_time=None):
     elif 21 <= hour <= 23:
         return [f"NIGHT {day}"]
     elif 0 <= hour < 7:
-        return [f"NIGHT {(current_time - timedelta(days=1)).day}"]
+        # Не возвращать NIGHT для предыдущего месяца
+        if prev_day.month != current_time.month:
+            return []
+        return [f"NIGHT {prev_day.day}"]
     elif 7 <= hour < 9:
-        return [f"DAY {day}", f"NIGHT {(current_time - timedelta(days=1)).day}"]
+        # Не возвращать NIGHT для предыдущего месяца
+        if prev_day.month != current_time.month:
+            return [f"DAY {day}"]
+        return [f"DAY {day}", f"NIGHT {prev_day.day}"]
     return []
 
 def parse_datetime(value):
@@ -82,13 +89,25 @@ def build_task(row, now, source_table):
     task.source_table = source_table
     return task
 
+def get_related_month(now_time=None):
+    """
+    Возвращает related_month для задачи:
+    - если сейчас первые 9 часов месяца и это ночная смена (0:00-8:59), related_month — предыдущий месяц
+    - иначе related_month — текущий месяц
+    """
+    now_time = now_time or TimeProvider.now()
+    if now_time.day == 1 and now_time.hour < 9:
+        # Предыдущий месяц
+        prev_month = (now_time.replace(day=1) - timedelta(days=1)).replace(day=1)
+        return prev_month.date()
+    return now_time.replace(day=1).date()
+
 def load_rotationsinfo_tasks(session, log_file):
     log_section(log_file, "define_tasks", "🔼 Фаза определения задач (RotationsInfo)")
     now_time = TimeProvider.now()
-    related_month = now_time.replace(day=1).date()
+    related_month = get_related_month(now_time)
     active_tabs = get_active_tabs(now_time)
-
-    log_info(log_file, "define_tasks", None, "now", f"🕒 Сейчас: {now_time}")
+    log_info(log_file, "define_tasks", None, "now", f"🕒 Сейчас: {now_time}. related_month: {related_month}")
     log_info(log_file, "define_tasks", None, "active_tabs", f"📄 Активные смены: {active_tabs}")
 
     try:
@@ -204,7 +223,7 @@ def load_rotationsinfo_tasks(session, log_file):
 def load_sheetsinfo_tasks(session, log_file):
     log_section(log_file, "define_tasks", "🔼 Фаза определения задач (SheetsInfo)")
     now_time = TimeProvider.now()
-    related_month = now_time.replace(day=1).date()
+    related_month = get_related_month(now_time)
     log_info(log_file, "define_tasks", None, "now", f"🕒 Сейчас: {now_time}. related_month: {related_month}")
 
     try:

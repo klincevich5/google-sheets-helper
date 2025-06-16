@@ -74,24 +74,24 @@ class Task:
         next_scan_time = self.last_scan + timedelta(seconds=self.scan_interval)
         return TimeProvider.now() >= next_scan_time
 
-    def assign_doc_ids(self, doc_id_map):
+    def assign_doc_ids(self, doc_id_map, log_file=None):
         from utils.logger import log_warning
         self.source_doc_id = None
         self.target_doc_id = None
         if not getattr(self, 'source_table_type', None):
-            log_warning(None, "assign_doc_ids", getattr(self, 'name_of_process', None), "no_source_type", "Нет source_table_type у задачи")
+            log_warning(log_file, "assign_doc_ids", getattr(self, 'name_of_process', None), "no_source_type", "Нет source_table_type у задачи")
             return False
         self.source_doc_id = doc_id_map.get(self.source_table_type)
         if self.source_doc_id is None:
-            log_warning(None, "assign_doc_ids", getattr(self, 'name_of_process', None), "no_source_doc_id", f"Не найден source_doc_id для {self.source_table_type}")
+            log_warning(log_file, "assign_doc_ids", getattr(self, 'name_of_process', None), "no_source_doc_id", f"Не найден source_doc_id для {self.source_table_type}")
         if getattr(self, 'target_table_type', None) == "nothing":
             self.target_doc_id = "nothing"
         elif getattr(self, 'target_table_type', None):
             self.target_doc_id = doc_id_map.get(self.target_table_type)
             if self.target_doc_id is None:
-                log_warning(None, "assign_doc_ids", getattr(self, 'name_of_process', None), "no_target_doc_id", f"Не найден target_doc_id для {self.target_table_type}")
+                log_warning(log_file, "assign_doc_ids", getattr(self, 'name_of_process', None), "no_target_doc_id", f"Не найден target_doc_id для {self.target_table_type}")
         else:
-            log_warning(None, "assign_doc_ids", getattr(self, 'name_of_process', None), "no_target_type", "Нет target_table_type у задачи")
+            log_warning(log_file, "assign_doc_ids", getattr(self, 'name_of_process', None), "no_target_type", "Нет target_table_type у задачи")
         return self.source_doc_id is not None and self.target_doc_id is not None
         
     def update_after_scan(self, success: bool):

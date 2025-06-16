@@ -40,7 +40,7 @@ class SheetsInfoScanner:
     def __init__(self, token_map, log_file=None):
         from core.config import SHEETSINFO_LOG
         self.token_map = token_map
-        self.log_file = log_file if log_file is not None else SHEETSINFO_LOG
+        self.log_file = log_file if log_file else (SHEETSINFO_LOG if SHEETSINFO_LOG else "logs/scanner_sheetsinfo.log")
         self.tasks = []
 
     def run(self):
@@ -131,7 +131,7 @@ class SheetsInfoScanner:
             return
         skipped = 0
         for task in self.tasks:
-            if not task.assign_doc_ids(self.doc_id_map):
+            if not task.assign_doc_ids(self.doc_id_map, self.log_file):
                 skipped += 1
                 log_warning(self.log_file, "load_tasks", getattr(task, 'name_of_process', None), "skipped", "Нет doc_id, задача пропущена")
         log_info(self.log_file, "load_tasks", None, "done", f"Загружено задач: {len(self.tasks)}, пропущено без doc_id: {skipped}")
@@ -152,7 +152,7 @@ class SheetsInfoScanner:
             return
         scan_groups = defaultdict(list)
         for task in ready_tasks:
-            if not task.assign_doc_ids(self.doc_id_map):
+            if not task.assign_doc_ids(self.doc_id_map, self.log_file):
                 log_warning(self.log_file, "scan_phase", getattr(task, 'name_of_process', None), "skipped", "Не удалось сопоставить doc_id. Пропуск.")
                 continue
             scan_groups[task.scan_group].append(task)

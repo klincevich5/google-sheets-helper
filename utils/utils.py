@@ -3,6 +3,7 @@
 import time
 import os
 import json
+import datetime
 
 from googleapiclient.errors import HttpError
 from google.oauth2.credentials import Credentials
@@ -35,40 +36,83 @@ def load_credentials(token_path, log_file):
         RuntimeError: Если токен недействителен.
     """
     if not os.path.exists(token_path):
+        log_error(log_file, "load_credentials", None, "file_not_found", f"❌ Файл токена не найден: {token_path}")
         raise FileNotFoundError(f"❌ Файл токена не найден: {token_path}")
 
     token_name = os.path.basename(token_path).replace("_token.json", "")
-    success = False
 
-    # try:
-    with open(token_path, encoding="utf-8") as f:
-        token = json.load(f)
-    creds = Credentials(
-        token=token["access_token"],
-        refresh_token=token.get("refresh_token"),
-        token_uri=token["token_uri"],
-        client_id=token["client_id"],
-        client_secret=token["client_secret"],
-        scopes=token.get("scopes", ["https://www.googleapis.com/auth/spreadsheets"])
-    )
+    try:
+        with open(token_path, encoding="utf-8") as f:
+            token = json.load(f)
+    except json.JSONDecodeError as e:
+        log_error(log_file, "load_credentials", None, "json_decode_error", f"❌ Ошибка чтения токена: {token_path}", exc=e)
+        raise RuntimeError(f"❌ Ошибка чтения токена: {token_path}") from e
 
-    if not creds.valid and creds.refresh_token:
-        try:
-            creds.refresh(Request())
-            with open(token_path, "w", encoding="utf-8") as token_file:
-                token_file.write(creds.to_json())
-            log_info(log_file, "load_credentials", None, "token_refresh", f"🔄 Токен обновлён: {token_path}")
-        except Exception as e:
-            log_error(log_file, "load_credentials", None, "token_refresh_fail", f"❌ Ошибка обновления токена {token_path}", exc=e)
-        raise
+    try:
+        creds = Credentials(
+            token=token.get("access_token"),
+            refresh_token=token.get("refresh_token"),
+            token_uri=token.get("token_uri"),
+            client_id=token.get("client_id"),
+            client_secret=token.get("client_secret"),
+            scopes=token.get("scopes", ["https://www.googleapis.com/auth/spreadsheets"])
+        )
+    except Exception as e:
+        log_error(log_file, "load_credentials", None, "credentials_creation_error", f"❌ Ошибка создания объекта Credentials: {token_path}", exc=e)
+        raise RuntimeError(f"❌ Ошибка создания объекта Credentials: {token_path}") from e
 
+    # Логирование информации о токене
+    log_info(log_file, "load_credentials", None, "token_info", f"🔍 Токен: {token.get('access_token')}")
+    log_info(log_file, "load_credentials", None, "token_info", f"🔄 Refresh Token: {token.get('refresh_token')}")
+    log_info(log_file, "load_credentials", None, "token_info", f"🌐 Token URI: {token.get('token_uri')}")
+    log_info(log_file, "load_credentials", None, "token_info", f"🆔 Client ID: {token.get('client_id')}")
+    log_info(log_file, "load_credentials", None, "token_info", f"🔑 Client Secret: {token.get('client_secret')}")
+    log_info(log_file, "load_credentials", None, "token_info", f"📜 Scopes: {token.get('scopes')}")
+
+    # # Обработка поля expiry
+    # expiry = token.get("expiry")
+    # if expiry:
+    #     try:
+    #         expiry_datetime = datetime.datetime.fromisoformat(expiry)
+    #         time_left = (expiry_datetime - datetime.datetime.utcnow()).total_seconds()
+    #         log_info(log_file, "load_credentials", None, "expiry_info", f"⏳ Время жизни токена: {time_left} секунд")
+    #         if time_left <= 0:
+    #             log_warning(log_file, "load_credentials", None, "token_expired", "🔄 Токен истёк. Требуется обновление.")
+    #             creds.expired = True
+    #     except ValueError as e:
+    #         log_error(log_file, "load_credentials", None, "expiry_format_error", f"⚠️ Неверный формат поля expiry: {expiry}", exc=e)
+    # else:
+    #     log_warning(log_file, "load_credentials", None, "expiry_missing", "⏳ Время жизни токена: Неизвестно")
+    #     if creds.refresh_token:
+    #         log_info(log_file, "load_credentials", None, "refresh_suggestion", "🔄 Попробуйте обновить токен для получения информации о сроке действия.")
+
+    # if creds.expired:
+    #     log_warning(log_file, "load_credentials", None, "token_expired", "🔄 Токен истёк. Требуется обновление.")
+    #     if creds.refresh_token:
+    #         try:
+    #             creds.refresh(Request())
+    #             with open(token_path, "w", encoding="utf-8") as token_file:
+    #                 token_file.write(creds.to_json())
+    #             log_success(log_file, "load_credentials", None, "token_refresh", f"🔄 Токен обновлён: {token_path}")
+    #         except Exception as e:
+    #             log_error(log_file, "load_credentials", None, "token_refresh_fail", f"❌ Ошибка обновления токена {token_path}", exc=e)
+    #             raise RuntimeError(f"❌ Не удалось обновить токен: {token_path}") from e
+    #     else:
+    #         raise RuntimeError(f"❌ Токен истёк и отсутствует refresh_token: {token_path}")
+    # else:
+    #     log_success(log_file, "load_credentials", None, "token_valid", "✅ Токен действителен.")
 
     if not creds.valid:
+        log_error(log_file, "load_credentials", None, "invalid_token", f"❌ Недействительный токен: {token_path}")
         raise RuntimeError(f"❌ Недействительный токен: {token_path}")
 
-    service = build("sheets", "v4", credentials=creds)
-    log_success(log_file, "load_credentials", None, "auth", f"✅ Авторизация выполнена: {token_name}")
-    success = True
+    try:
+        service = build("sheets", "v4", credentials=creds)
+        log_success(log_file, "load_credentials", None, "auth", f"✅ Авторизация выполнена: {token_name}")
+    except Exception as e:
+        log_error(log_file, "load_credentials", None, "auth_fail", f"❌ Ошибка авторизации: {token_name}", exc=e)
+        raise RuntimeError(f"❌ Ошибка создания службы Google Sheets API: {token_name}") from e
+
     return service
 
 ##################################################################################
@@ -100,7 +144,7 @@ def check_sheet_exists(service, spreadsheet_id, sheet_name, log_file, token_name
         return False
 
     except Exception as e:
-        log_error(log_file, "check_sheet_exists", None, "fail", f"❌ Ошибка при проверке листа в {spreadsheet_id}", exc=e)
+        log_error(log_file, "check_sheet_exists", None, "fail", f"❌ Ошибка при проверке {sheet_name}", exc=e)
         return False
 
     finally:

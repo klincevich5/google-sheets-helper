@@ -49,5 +49,7 @@ def log_section(log_file, phase, message):
 
 def log_separator(log_file, phase):
     # Добавляем эмодзи-разделитель
-    decorated = "🟣🟣🟣 " + "━" * 20 + " 🟣🟣🟣"
+    _log_structured(log_file, "SECTION", phase, None, None, " " * 100 )
+    decorated = "🟣🟣🟣 " + "━" * 100 + " 🟣🟣🟣"
     _log_structured(log_file, "INFO", phase, None, None, decorated)
+    _log_structured(log_file, "SECTION", phase, None, None, " " * 100 )

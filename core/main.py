@@ -31,7 +31,7 @@ from core.data import return_tracked_tables
 from scanners.rotationsinfo_scanner import RotationsInfoScanner
 from scanners.sheetsinfo_scanner import SheetsInfoScanner
 from scanners.monitoring_storage_scanner import MonitoringStorageScanner
-from core.timezone import timezone, now
+from core.timezone import now
 from core.time_provider import TimeProvider
 
 rotation_tokens = {
@@ -93,41 +93,49 @@ def run_retro_scanner(scanner_cls, token_map, log_path, start_date, end_date):
     import time
     from utils.utils import load_credentials
     d = start_date
+    first = True
     while d <= end_date and not stop_event.is_set():
-        scan_datetime = datetime.combine(d, datetime.min.time()).replace(hour=12)
-        TimeProvider.set_time(scan_datetime)
-        try:
-            print(f"▶️ Ретро-сканирование {scanner_cls.__name__} на дату: {scan_datetime}")
-            scanner = scanner_cls(token_map, log_file=log_path)
-            from database.session import get_session
-            from core.data import return_tracked_tables
-            with get_session() as session:
-                scanner.service = None
-                token_name = list(scanner.token_map.keys())[0]
-                token_path = scanner.token_map[token_name]
-                scanner.token_name = token_name
-                scanner.service = scanner.service or load_credentials(token_path, log_path)
-                scanner.doc_id_map = return_tracked_tables(session)
-                phase_methods = [
-                    ("load_tasks", lambda: scanner.load_tasks(session)),
-                    ("scan_phase", lambda: scanner.scan_phase(session)),
-                    ("process_phase", lambda: scanner.process_phase(session)),
-                    ("update_phase", lambda: scanner.update_phase(session)),
-                ]
-                for phase_name, method in list(phase_methods):
-                    try:
-                        from utils.logger import log_separator, log_info, log_success
-                        log_separator(scanner.log_file, phase_name)
-                        log_info(scanner.log_file, phase_name, None, "start", f"[RETRO] Старт этапа {phase_name} для {scan_datetime}")
-                        method()
-                        log_success(scanner.log_file, phase_name, None, "finish", f"[RETRO] Этап {phase_name} завершён для {scan_datetime}\n")
-                    except Exception as e:
-                        from utils.logger import log_error
-                        log_error(scanner.log_file, phase_name, None, "fail", f"[RETRO] Ошибка на этапе {phase_name} для {scan_datetime}: {e}")
-        except Exception as e:
-            print(f"[RETRO][{scanner_cls.__name__}] Ошибка на {scan_datetime}: {e}")
-        finally:
-            TimeProvider.reset()
+        if first:
+            # Только дневная смена для первой даты
+            scan_times = [(12, "Дневная")]
+            first = False
+        else:
+            # Ночная смена (00:00) и дневная (12:00) для остальных дат
+            scan_times = [(0, "Ночная"), (12, "Дневная")]
+        for shift_hour, shift_name in scan_times:
+            scan_datetime = datetime.combine(d, datetime.min.time()).replace(hour=shift_hour)
+            TimeProvider.set_time(scan_datetime)
+            try:
+                print(f"▶️ Ретро-сканирование {scanner_cls.__name__} на дату: {scan_datetime} ({shift_name} смена)")
+
+                scanner = scanner_cls(token_map, log_file=log_path)
+                with get_session() as session:
+                    scanner.service = None
+                    token_name = list(scanner.token_map.keys())[0]
+                    token_path = scanner.token_map[token_name]
+                    scanner.token_name = token_name
+                    scanner.service = scanner.service or load_credentials(token_path, log_path)
+                    scanner.doc_id_map = return_tracked_tables(session)
+                    phase_methods = [
+                        ("load_tasks", lambda: scanner.load_tasks(session)),
+                        ("scan_phase", lambda: scanner.scan_phase(session)),
+                        ("process_phase", lambda: scanner.process_phase(session)),
+                        ("update_phase", lambda: scanner.update_phase(session)),
+                    ]
+                    for phase_name, method in list(phase_methods):
+                        try:
+                            from utils.logger import log_separator, log_info, log_success
+                            log_separator(scanner.log_file, phase_name)
+                            log_info(scanner.log_file, phase_name, None, "start", f"[RETRO] Старт этапа {phase_name} для {scan_datetime} ({shift_name} смена)")
+                            method()
+                            log_success(scanner.log_file, phase_name, None, "finish", f"[RETRO] Этап {phase_name} завершён для {scan_datetime} ({shift_name} смена)\n")
+                        except Exception as e:
+                            from utils.logger import log_error
+                            log_error(scanner.log_file, phase_name, None, "fail", f"[RETRO] Ошибка на этапе {phase_name} для {scan_datetime} ({shift_name} смена): {e}")
+            except Exception as e:
+                print(f"[RETRO][{scanner_cls.__name__}] Ошибка на {scan_datetime} ({shift_name} смена): {e}")
+            finally:
+                TimeProvider.reset()
         d += timedelta(days=1)
         time.sleep(2)
 
@@ -187,9 +195,9 @@ async def main():
         print(f"⏳ Ретро-сканеры будут работать с интервалом: {start} — {end}")
         # Запуск ретро-потоков
 
-        t1 = threading.Thread(target=run_retro_scanner, args=(RotationsInfoScanner, rotation_tokens, ROTATIONSINFO_RETRO_LOG, start, end), daemon=True)
-        t1.start()
-        scanner_threads.append(t1)
+        # t1 = threading.Thread(target=run_retro_scanner, args=(RotationsInfoScanner, rotation_retro_tokens, ROTATIONSINFO_RETRO_LOG, start, end), daemon=True)
+        # t1.start()
+        # scanner_threads.append(t1)
 
         # t2 = threading.Thread(target=run_retro_scanner, args=(SheetsInfoScanner, sheet_tokens, SHEETSINFO_RETRO_LOG, start, end), daemon=True)
         # t2.start()

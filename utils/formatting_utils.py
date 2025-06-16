@@ -422,6 +422,12 @@ def format_sheet(
 ):
     try:
         log_section(log_file, "format_sheet", f"🎨 Подготовка форматирования листа '{sheet_title}'")
+        
+        # Проверка входных данных
+        if not values or not isinstance(values, list) or not all(isinstance(row, list) for row in values):
+            log_error(log_file, "format_sheet", None, "invalid_data", "❌ Некорректные входные данные для форматирования.")
+            return
+
         sheet_metadata = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
         sheet_id = next(
             (s["properties"]["sheetId"] for s in sheet_metadata["sheets"]
@@ -430,7 +436,13 @@ def format_sheet(
         )
         if sheet_id is None:
             raise ValueError(f"❌ Лист '{sheet_title}' не найден")
-        formatting_requests = build_formatting_requests(values, sheet_id, start_row, start_col, log_file)
+
+        try:
+            formatting_requests = build_formatting_requests(values, sheet_id, start_row, start_col, log_file)
+        except Exception as e:
+            log_error(log_file, "format_sheet", None, "build_requests_fail", f"❌ Ошибка при создании запросов форматирования: {e}")
+            return
+
         success = True
 
         for i in range(0, len(formatting_requests), chunk_size):

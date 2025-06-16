@@ -3,6 +3,7 @@
 from sqlalchemy import select
 import re
 from datetime import datetime, timedelta
+import time
 from core.config import MONITORING_LOG
 from collections import defaultdict
 from utils.logger import (
@@ -78,11 +79,11 @@ class MonitoringStorageScanner:
     def __init__(self, token_map, log_file=None):
         from core.config import MONITORING_LOG
         self.token_map = token_map
-        self.log_file = log_file if log_file is not None else MONITORING_LOG
+        self.log_file = log_file if log_file else (MONITORING_LOG if MONITORING_LOG else "logs/scanner_monitoring.log")
         self.date = datetime.now().date()
         self.tasks = []
 
-        log_info(MONITORING_LOG, f"🌀 Дата: {self.date}")
+        log_info(self.log_file, f"🌀 Дата: {self.date}")
 
         # --- Bulk load all needed data into memory for fast access ---
         self._load_caches()
