@@ -122,7 +122,7 @@ def build_formatting_requests(values, sheet_id, start_row=0, start_col=3, log_fi
                 "startRowIndex": start_row,
                 "endRowIndex": start_row + total_rows,
                 "startColumnIndex": start_col,
-                "endColumnIndex": start_col + total_cols + 1,  # +1 для AD
+                "endColumnIndex": start_col + total_cols,  # +1 для AD
             },
             "cell": {
                 "userEnteredFormat": {

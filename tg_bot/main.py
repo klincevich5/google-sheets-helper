@@ -13,7 +13,6 @@ async def main():
     # Подключаем роутеры
     dp.include_routers(
         common,
-        # viewing_shift больше не обязателен, если все переходы реализованы в main.py каждой роли
         calendar_navigation,
         dealer_main.router,
         manager_main.router,

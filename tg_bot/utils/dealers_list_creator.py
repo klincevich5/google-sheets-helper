@@ -15,6 +15,7 @@ def generate_dealers_list_text(db, selected_date: date, shift: str) -> str:
     # Получаем записи
     records = db.query(ScheduleOT).filter(
         ScheduleOT.date == selected_date,
+        # ScheduleOT.related_date == selected_date,
         ScheduleOT.related_month == related_month
     ).all()
 

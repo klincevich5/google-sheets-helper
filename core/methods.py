@@ -6,6 +6,48 @@ from datetime import timedelta, datetime
 from core.config import TIMEZONE
 from zoneinfo import ZoneInfo
 
+def process_schedule_OT_json(values: List[List], source_page_area=None) -> List[dict]:
+    """
+    Преобразует расписание (дилер + 31 колонка по сменам) в список словарей:
+    {
+        dealer_name, related_date, related_month, shift_type
+    }
+    """
+    from datetime import date
+
+    today = date.today()
+    related_month = today.replace(day=1)
+    result = []
+
+    for row in values:
+        if not row or not isinstance(row, list) or len(row) < 2:
+            continue
+
+        dealer_name = row[0].strip()
+        if not dealer_name:
+            continue
+
+        for col_idx, shift in enumerate(row[1:], start=1):
+            shift = (shift or "").strip()
+            if shift in {"", "-", "/"}:
+                continue
+
+            try:
+                shift_date = related_month.replace(day=col_idx)
+            except ValueError:
+                # Например, 31 день в месяце, которого нет
+                continue
+
+            result.append({
+                "dealer_name": dealer_name,
+                "related_date": shift_date.isoformat(),
+                "related_month": related_month.isoformat(),
+                "shift_type": shift
+            })
+
+    return result
+
+
 def filter_by_column(values, col_index, key="TRUE", return_col=0):
     """
     Фильтрует строки, где в колонке col_index значение == key (по умолчанию TRUE),
@@ -200,6 +242,7 @@ def process_full_turkish_rotation(values, source_page_area=None):
         return values
 
 PROCESSORS = {
+    "process_schedule_OT_json": process_schedule_OT_json,
     "process_default": process_default,
     "process_qa_list": process_qa_list,
     "process_qa_vip_list": process_qa_vip_list,

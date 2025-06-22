@@ -112,16 +112,28 @@ class Task:
         process_func = PROCESSORS.get(method_name)
 
         if not process_func:
-            raise ValueError(f"Неизвестный метод обработки: {method_name}")
+            raise ValueError(f"❌ Неизвестный метод обработки: {method_name}")
 
         try:
-            # отдельная обработка process_schedule_OT так как она требует source_doc_id для определения месяца
             processed_values = process_func(self.raw_values_json, self.source_page_area)
-            if not isinstance(processed_values, list) or not all(isinstance(row, list) for row in processed_values):
-                raise ValueError("❌ Обработанные данные не являются списком списков")
-            self.values_json = processed_values
+
+            if not isinstance(processed_values, list):
+                raise ValueError(f"❌ Обработанные данные должны быть списком, но получено: {type(processed_values)}")
+
+            if all(isinstance(row, list) for row in processed_values):
+                self.values_json = processed_values
+            elif all(isinstance(row, dict) for row in processed_values):
+                self.values_json = processed_values
+            else:
+                raise ValueError(
+                    f"❌ Обработанные данные должны быть list[list] или list[dict]. "
+                    f"Получен смешанный или некорректный тип. Пример: {processed_values[:1]}"
+                )
+
         except Exception as e:
-            raise ValueError(f"❌ Ошибка при вызове {method_name}: {e}")
+            import traceback
+            raise ValueError(f"❌ Ошибка при вызове {method_name}: {e}\n{traceback.format_exc()}")
+
 
     def check_for_update(self):
         if not self.values_json:

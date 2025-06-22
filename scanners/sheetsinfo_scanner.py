@@ -567,7 +567,6 @@ class SheetsInfoScanner:
             last_row=row_index
         )
 
-
 ################################################################################################
 # Импорт статуса фидбеков
 ################################################################################################
@@ -682,31 +681,31 @@ class SheetsInfoScanner:
                 total_success += success_count
                 total_error += error_count
 
-                # --- Обновление DealerMonthlyStatus ---
-                log_info(self.log_file, "import_feedbacks_to_update", task.name_of_process, "dealer_status_update", f"🔄 Обновление DealerMonthlyStatus по фидбекам для {task.related_month}...")
-                dealers = session.query(DealerMonthlyStatus).filter_by(related_month=task.related_month).all()
-                output_data = []
+                # # --- Обновление DealerMonthlyStatus ---
+                # log_info(self.log_file, "import_feedbacks_to_update", task.name_of_process, "dealer_status_update", f"🔄 Обновление DealerMonthlyStatus по фидбекам для {task.related_month}...")
+                # dealers = session.query(DealerMonthlyStatus).filter_by(related_month=task.related_month).all()
+                # output_data = []
 
-                for dealer in dealers:
-                    feedbacks = session.query(FeedbackStorage).filter_by(
-                        dealer_name=dealer.dealer_name,
-                        related_month=dealer.related_month
-                    ).all()
+                # for dealer in dealers:
+                #     feedbacks = session.query(FeedbackStorage).filter_by(
+                #         dealer_name=dealer.dealer_name,
+                #         related_month=dealer.related_month
+                #     ).all()
 
-                    if not feedbacks:
-                        dealer.feedback_status = True
-                        output_data.append([dealer.dealer_name, "✅"])
-                        continue
+                #     if not feedbacks:
+                #         dealer.feedback_status = True
+                #         output_data.append([dealer.dealer_name, "✅"])
+                #         continue
 
-                    if any(f.forwarded_feedback is None for f in feedbacks):
-                        dealer.feedback_status = False
-                        output_data.append([dealer.dealer_name, "❌"])
-                    else:
-                        dealer.feedback_status = True
-                        output_data.append([dealer.dealer_name, "✅"])
+                #     if any(f.forwarded_feedback is None for f in feedbacks):
+                #         dealer.feedback_status = False
+                #         output_data.append([dealer.dealer_name, "❌"])
+                #     else:
+                #         dealer.feedback_status = True
+                #         output_data.append([dealer.dealer_name, "✅"])
 
-                session.commit()
-                log_success(self.log_file, "import_feedbacks_to_update", task.name_of_process, "dealer_status_updated", f"✅ Обновлено DealerMonthlyStatus: {len(output_data)} записей")
+                # session.commit()
+                # log_success(self.log_file, "import_feedbacks_to_update", task.name_of_process, "dealer_status_updated", f"✅ Обновлено DealerMonthlyStatus: {len(output_data)} записей")
 
                 # --- Выгрузка в Google Sheets ---
                 try:
@@ -741,78 +740,83 @@ class SheetsInfoScanner:
 ################################################################################################
 
     def import_schedule_OT_to_update(self, tasks, session):
-        total_new = 0
-        total_updated = 0
+        pass
+    #     total_new = 0
+    #     total_updated = 0
 
-        for task in tasks:
-            new_entries = 0
-            updated_entries = 0
-            try:
-                values = task.values_json
-                if not values or not isinstance(values, list):
-                    log_error(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "empty_values", f"❌ values_json пуст или некорректен в задаче {task.name_of_process}")
-                    continue
+    #     for task in tasks:
+    #         new_entries = 0
+    #         updated_entries = 0
+    #         try:
+    #             values = task.values_json
+    #             if not values or not isinstance(values, list):
+    #                 log_error(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "empty_values", f"❌ values_json пуст или некорректен в задаче {task.name_of_process}")
+    #                 continue
 
-                related_month = task.related_month.replace(day=1)
-                existing_records = session.query(ScheduleOT).filter_by(related_month=related_month).all()
-                existing_lookup = {
-                    (rec.dealer_name.strip(), rec.date): rec
-                    for rec in existing_records if rec.dealer_name
-                }
+    #             related_month = task.related_month.replace(day=1)
+    #             existing_records = session.query(ScheduleOT).filter_by(related_month=related_month).all()
+    #             existing_lookup = {
+    #                 (rec.dealer_name.strip(), rec.date): rec
+    #                 for rec in existing_records if rec.dealer_name
+    #             }
 
-                for row in values:
-                    if not row or not isinstance(row, list) or len(row) < 2:
-                        continue
+    #             for row in values:
+    #                 if not row or not isinstance(row, list) or len(row) < 2:
+    #                     continue
 
-                    dealer_name = row[0]
-                    if not dealer_name or not isinstance(dealer_name, str):
-                        continue
+    #                 dealer_name = row[0]
+    #                 if not dealer_name or not isinstance(dealer_name, str):
+    #                     continue
 
-                    dealer_name = dealer_name.strip()
+    #                 dealer_name = dealer_name.strip()
 
-                    for col_idx, shift in enumerate(row[1:], start=1):
-                        shift = (shift or "").strip()
-                        if shift in {"", "-", "/"}:
-                            continue
+    #                 for col_idx, shift in enumerate(row[1:], start=1):
+    #                     shift = (shift or "").strip()
+    #                     if shift in {"", "-", "/"}:
+    #                         continue
 
-                        try:
-                            shift_date = related_month.replace(day=col_idx)
-                        except ValueError:
-                            continue
+    #                     try:
+    #                         shift_date = related_month.replace(day=col_idx)
+    #                     except ValueError:
+    #                         continue
 
-                        key = (dealer_name, shift_date)
+    #                     key = (dealer_name, shift_date)
 
-                        if key in existing_lookup:
-                            record = existing_lookup[key]
-                            if record.shift_type != shift:
-                                record.shift_type = shift
-                                updated_entries += 1
-                        else:
-                            exists = session.query(ScheduleOT).filter_by(
-                                dealer_name=dealer_name,
-                                date=shift_date,
-                                related_month=related_month
-                            ).first()
-                            if exists:
-                                continue
-                            session.add(ScheduleOT(
-                                date=shift_date,
-                                dealer_name=dealer_name,
-                                shift_type=shift,
-                                related_month=related_month
-                            ))
-                            new_entries += 1
+    #                     if key in existing_lookup:
+    #                         record = existing_lookup[key]
+    #                         if record.shift_type != shift:
+    #                             record.shift_type = shift
+    #                             updated_entries += 1
+    #                     else:
+    #                         exists = session.query(ScheduleOT).filter_by(
+    #                             dealer_name=dealer_name,
+    #                             related_date=shift_date,
+    #                             related_month=related_month
+    #                         ).first()
+    #                         if exists:
+    #                             continue
+    #                         session.add(ScheduleOT(
+    #                             related_date=shift_date,
+    #                             dealer_name=dealer_name,
+    #                             shift_type=shift,
+    #                             related_month=related_month
+    #                         ))
+    #                         new_entries += 1
 
-                session.commit()
-                log_success(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "imported", f"📅 [{task.name_of_process}] ScheduleOT — новых: {new_entries}, обновлено: {updated_entries}")
-                total_new += new_entries
-                total_updated += updated_entries
+    #             session.commit()
+    #             log_success(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "imported", f"📅 [{task.name_of_process}] ScheduleOT — новых: {new_entries}, обновлено: {updated_entries}")
+    #             total_new += new_entries
+    #             total_updated += updated_entries
 
-            except Exception as e:
-                session.rollback()
-                log_error(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "task_fail", f"❌ Ошибка при обработке задачи {task.name_of_process}: {e}")
+    #         except Exception as e:
+    #             session.rollback()
+    #             log_error(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "task_fail", f"❌ Ошибка при обработке задачи {task.name_of_process}: {e}")
 
-        log_success(self.log_file, "import_schedule_OT_to_update", None, "imported_total", f"✅ ScheduleOT итого — новых: {total_new}, обновлено: {total_updated}")
+    #     log_success(self.log_file, "import_schedule_OT_to_update", None, "imported_total", f"✅ ScheduleOT итого — новых: {total_new}, обновлено: {total_updated}")
+
+################################################################################################
+# Импорт QA List
+################################################################################################
 
     def import_qa_list_to_update(self, qa_list_update, session):
         """

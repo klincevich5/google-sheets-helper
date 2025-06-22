@@ -20,17 +20,15 @@ from core.config import (
     ROTATIONSINFO_LOG,
     ROTATIONSINFO_RETRO_LOG,
     SHEETSINFO_RETRO_LOG,
-    MONITORING_LOG,
-    MONITORING_RETRO_LOG,
     SHEETSINFO_TOKEN,
     ROTATIONSINFO_TOKEN_1,
     ROTATIONSINFO_TOKEN_2,
 )
-from database.session import get_session, SessionLocal, engine  # 👈 импортируем сессию и engine
+from database.session import get_session, SessionLocal, engine
 from core.data import return_tracked_tables
 from scanners.rotationsinfo_scanner import RotationsInfoScanner
 from scanners.sheetsinfo_scanner import SheetsInfoScanner
-from scanners.monitoring_storage_scanner import MonitoringStorageScanner
+# from scanners.monitoring_storage_scanner import MonitoringStorageScanner
 from core.timezone import now
 from core.time_provider import TimeProvider
 
@@ -72,15 +70,6 @@ def start_sheets_scanner(sheet_tokens):
             scanner.run()
         except Exception as e:
             log_error(MAIN_LOG, "main", None, "fail", "Ошибка в SheetsInfoScanner", exc=e)
-            time.sleep(5)
-
-def start_monitoring_scanner(monitoring_tokens):
-    while not stop_event.is_set():
-        try:
-            scanner = MonitoringStorageScanner(monitoring_tokens)
-            scanner.run()
-        except Exception as e:
-            log_error(MAIN_LOG, "main", None, "fail", "Ошибка в MonitoringStorageScanner", exc=e)
             time.sleep(5)
 
 def signal_handler(sig, frame):
@@ -195,17 +184,14 @@ async def main():
         print(f"⏳ Ретро-сканеры будут работать с интервалом: {start} — {end}")
         # Запуск ретро-потоков
 
-        # t1 = threading.Thread(target=run_retro_scanner, args=(RotationsInfoScanner, rotation_retro_tokens, ROTATIONSINFO_RETRO_LOG, start, end), daemon=True)
-        # t1.start()
-        # scanner_threads.append(t1)
+        t1 = threading.Thread(target=run_retro_scanner, args=(RotationsInfoScanner, rotation_retro_tokens, ROTATIONSINFO_RETRO_LOG, start, end), daemon=True)
+        t1.start()
+        scanner_threads.append(t1)
 
         # t2 = threading.Thread(target=run_retro_scanner, args=(SheetsInfoScanner, sheet_tokens, SHEETSINFO_RETRO_LOG, start, end), daemon=True)
         # t2.start()
         # scanner_threads.append(t2)
 
-        # t3 = threading.Thread(target=run_retro_scanner, args=(MonitoringStorageScanner, monitoring_tokens, MONITORING_RETRO_LOG, start, end), daemon=True)
-        # t3.start()
-        # scanner_threads.append(t3)
     else:
         TimeProvider.reset()
 

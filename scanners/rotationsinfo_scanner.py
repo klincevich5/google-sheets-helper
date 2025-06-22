@@ -10,6 +10,7 @@ from utils.logger import (
 )
 from utils.formatting_utils import format_sheet
 from database.session import get_session
+from database.db_models import RotationsInfo
 
 from core.config import (
     ROTATIONSINFO_LOG,
@@ -149,7 +150,7 @@ class RotationsInfoScanner:
                 else:
                     log_warning(self.log_file, phase, task.name_of_process, "skipped", f"Лист '{sheet_name}' не найден")
                     task.update_after_scan(success=False)
-                    update_task_scan_fields(session, task, self.log_file, table_name="RotationsInfo")
+                    update_task_scan_fields(session, task, self.log_file, table_name=RotationsInfo.__tablename__)
             if not valid_tasks:
                 log_info(self.log_file, phase, None, "empty", f"Все задачи группы {scan_group} отфильтрованы. Пропуск batchGet.")
                 continue
@@ -170,7 +171,7 @@ class RotationsInfoScanner:
             if not response_data:
                 for task in valid_tasks:
                     task.update_after_scan(success=False)
-                    update_task_scan_fields(session, task, self.log_file, table_name="RotationsInfo")
+                    update_task_scan_fields(session, task, self.log_file, table_name=RotationsInfo.__tablename__)
                 log_warning(self.log_file, phase, None, "empty", "Пустой ответ от batchGet. Все задачи будут отмечены как неудачные.")
                 continue
             normalized_response = {}
@@ -190,11 +191,11 @@ class RotationsInfoScanner:
                 if matched_values:
                     task.raw_values_json = matched_values
                     task.update_after_scan(success=True)
-                    update_task_scan_fields(session, task, self.log_file, table_name="RotationsInfo")
+                    update_task_scan_fields(session, task, self.log_file, table_name=RotationsInfo.__tablename__)
                     log_success(self.log_file, phase, task.name_of_process, "found", f"Найден диапазон {sheet_name}!{cells_range}, строк: {len(matched_values)}")
                 else:
                     task.update_after_scan(success=False)
-                    update_task_scan_fields(session, task, self.log_file, table_name="RotationsInfo")
+                    update_task_scan_fields(session, task, self.log_file, table_name=RotationsInfo.__tablename__)
                     log_warning(self.log_file, phase, task.name_of_process, "not_found", f"Диапазон {expected_sheet}!{task.source_page_area} не найден или пуст.")
         log_info(self.log_file, phase, None, "summary", "\n".join(
             [f"• {task.name_of_process} {task.source_page_name}: scanned={task.scanned}, processed={task.proceed}, changed={task.changed}, uploaded={task.uploaded}"
@@ -236,7 +237,7 @@ class RotationsInfoScanner:
                     continue
                 if task.changed:
                     try:
-                        update_task_process_fields(session, task, self.log_file, table_name="RotationsInfo")
+                        update_task_process_fields(session, task, self.log_file, table_name=RotationsInfo.__tablename__)
                         log_success(self.log_file, "process_phase", task.name_of_process, "changed", f"Данные изменены и сохранены ({processor.__name__})")
                     except Exception as e:
                         log_error(self.log_file, "process_phase", task.name_of_process, "fail", "Ошибка при сохранении изменений в БД", exc=e)
@@ -322,7 +323,7 @@ class RotationsInfoScanner:
                                     session=session,
                                     task=task,
                                     log_file=self.log_file,
-                                    table_name="RotationsInfo"
+                                    table_name=RotationsInfo.__tablename__
                                 )
                                 log_warning(self.log_file, "import_main_data", name, "no_data", "Нет корректных данных. Пропуск.")
                                 continue
@@ -334,7 +335,7 @@ class RotationsInfoScanner:
                                     session=session,
                                     task=task,
                                     log_file=self.log_file,
-                                    table_name="RotationsInfo"
+                                    table_name=RotationsInfo.__tablename__
                                 )
                                 log_warning(self.log_file, "import_main_data", name, "null", "Содержит 'NULL'. Пропуск.")
                                 continue
@@ -410,7 +411,7 @@ class RotationsInfoScanner:
                                 session=session,
                                 task=task,
                                 log_file=self.log_file,
-                                table_name="RotationsInfo"
+                                table_name=RotationsInfo.__tablename__
                             )
                         except Exception as e:
                             log_error(self.log_file, "import_main_data", task.name_of_process, "fail", "Ошибка при обновлении task", exc=e)
@@ -464,7 +465,7 @@ class RotationsInfoScanner:
                                 session=session,
                                 task=task,
                                 log_file=self.log_file,
-                                table_name="RotationsInfo"
+                                table_name=RotationsInfo.__tablename__
                             )
                         continue
 
@@ -478,7 +479,7 @@ class RotationsInfoScanner:
                                 session=session,
                                 task=task,
                                 log_file=self.log_file,
-                                table_name="RotationsInfo"
+                                table_name=RotationsInfo.__tablename__
                             )
                             log_warning(self.log_file, "import_shuffle_data", task.name_of_process, "no_data", "Нет данных. Пропуск.")
                             continue
@@ -490,7 +491,7 @@ class RotationsInfoScanner:
                                 session=session,
                                 task=task,
                                 log_file=self.log_file,
-                                table_name="RotationsInfo"
+                                table_name=RotationsInfo.__tablename__
                             )
                             log_warning(self.log_file, "import_shuffle_data", task.name_of_process, "null", "Содержит 'NULL'. Пропуск.")
                             continue
@@ -527,7 +528,7 @@ class RotationsInfoScanner:
                                 session=session,
                                 task=task,
                                 log_file=self.log_file,
-                                table_name="RotationsInfo"
+                                table_name=RotationsInfo.__tablename__
                             )
                     if success:
                         log_success(self.log_file, "import_shuffle_data", page_name, "uploaded", "Успешная вставка данных страницы")
@@ -542,5 +543,5 @@ class RotationsInfoScanner:
                             session=session,
                             task=task,
                             log_file=self.log_file,
-                            table_name="RotationsInfo"
+                            table_name=RotationsInfo.__tablename__
                         )
