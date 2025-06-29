@@ -104,36 +104,40 @@ class Task:
             self.scan_failures += 1
             self.scanned = 0    # флаг, что задачу не нужно обрабатывать
 
-    def process_raw_value(self):
+    def process_raw_value(self, log_file=None):
         if not self.raw_values_json:
+            if log_file:
+                from utils.logger import log_error
+                log_error(log_file, "process_phase", self.name_of_process, "fail", "❌ Нет данных для обработки")
+            print("❌ Нет данных для обработки")
             return
 
         method_name = self.process_data_method or "process_default"
         process_func = PROCESSORS.get(method_name)
 
         if not process_func:
-            raise ValueError(f"❌ Неизвестный метод обработки: {method_name}")
+            error_msg = f"❌ Неизвестный метод обработки: {method_name}"
+            if log_file:
+                from utils.logger import log_error
+                log_error(log_file, "process_phase", self.name_of_process, "fail", error_msg)
+            raise ValueError(error_msg)
 
         try:
             processed_values = process_func(self.raw_values_json, self.source_page_area)
-
-            if not isinstance(processed_values, list):
-                raise ValueError(f"❌ Обработанные данные должны быть списком, но получено: {type(processed_values)}")
-
-            if all(isinstance(row, list) for row in processed_values):
-                self.values_json = processed_values
-            elif all(isinstance(row, dict) for row in processed_values):
-                self.values_json = processed_values
-            else:
-                raise ValueError(
-                    f"❌ Обработанные данные должны быть list[list] или list[dict]. "
-                    f"Получен смешанный или некорректный тип. Пример: {processed_values[:1]}"
-                )
-
+            self.values_json = processed_values
         except Exception as e:
             import traceback
+            if log_file:
+                from utils.logger import log_error
+                log_error(
+                    log_file,
+                    "process_phase",
+                    self.name_of_process,
+                    "fail",
+                    f"❌ Ошибка при вызове {method_name}: {e}",
+                    exc=traceback.format_exc()
+                )
             raise ValueError(f"❌ Ошибка при вызове {method_name}: {e}\n{traceback.format_exc()}")
-
 
     def check_for_update(self):
         if not self.values_json:

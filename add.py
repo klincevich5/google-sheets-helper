@@ -1,20 +1,18 @@
 import csv
 from datetime import datetime
-from sqlalchemy.orm import Session
-from database.db_models import Person, EmployeePeriod
-from database.session import get_session
+from database.db_models import Person
+from database.session import get_session  # или твой способ подключения
 
-CSV_FILE = "person_data.csv"
+CSV_FILE = "person_data.csv"  # путь к CSV
 
 def parse_date(date_str):
     if not date_str or date_str.strip() == "":
         return None
     return datetime.strptime(date_str.strip(), "%d.%m.%Y").date()
 
-def populate_person_and_period():
+def populate_persons_from_csv():
     with get_session() as session:
-        created_persons = 0
-        created_periods = 0
+        created, updated, skipped = 0, 0, 0
 
         with open(CSV_FILE, newline='', encoding="utf-8") as csvfile:
             reader = csv.DictReader(csvfile)
@@ -24,7 +22,11 @@ def populate_person_and_period():
                 start_date = parse_date(row.get("Date of creating"))
                 end_date = parse_date(row.get("Date of destruction"))
 
-                # Get or create Person (по full_name + dealer_nickname)
+                if not full_name or not nickname:
+                    print(f"⚠️ Пропущена строка без имени или никнейма: {row}")
+                    skipped += 1
+                    continue
+
                 person = session.query(Person).filter_by(
                     full_name=full_name,
                     dealer_nickname=nickname
@@ -33,38 +35,30 @@ def populate_person_and_period():
                 if not person:
                     person = Person(
                         full_name=full_name,
-                        dealer_nickname=nickname
-                    )
-                    session.add(person)
-                    session.flush()  # Чтобы получить person.id
-                    created_persons += 1
-
-                # Create EmployeePeriod if not exists
-                period_exists = session.query(EmployeePeriod).filter_by(
-                    person_id=person.id,
-                    date_start=start_date,
-                    date_end=end_date
-                ).first()
-
-                if not period_exists:
-                    period = EmployeePeriod(
-                        person_id=person.id,
+                        dealer_nickname=nickname,
                         date_start=start_date,
                         date_end=end_date
                     )
-                    session.add(period)
-                    created_periods += 1
+                    session.add(person)
+                    created += 1
+                else:
+                    # обновление
+                    person.date_start = start_date
+                    person.date_end = end_date
+                    updated += 1
 
         session.commit()
-        print(f"✅ Добавлено персон: {created_persons}")
-        print(f"✅ Добавлено периодов: {created_periods}")
-        print("\n📋 Текущий список персон и периодов:")
+        print(f"✅ Создано персон: {created}")
+        print(f"✅ Обновлено персон: {updated}")
+        print(f"⚠️ Пропущено строк: {skipped}")
 
-        # Печать всех персон и их периодов
+        # Вывод всех персон
+        print("\n📋 Список персон:")
         for person in session.query(Person).order_by(Person.full_name).all():
             print(f"👤 {person.full_name} ({person.dealer_nickname})")
-            for period in person.employment_periods:
-                print(f"   └ 📆 {period.date_start} – {period.date_end or 'настоящее время'}")
+            print(f"   📆 {person.date_start} – {person.date_end or 'настоящее время'}")
 
 if __name__ == "__main__":
-    populate_person_and_period()
+    print("🔄 Начинаем заполнение персон из CSV...")
+    populate_persons_from_csv()
+    print("✅ Заполнение завершено!")

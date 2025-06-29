@@ -69,7 +69,7 @@ def load_credentials(token_path, log_file):
     log_info(log_file, "load_credentials", None, "token_info", f"🔑 Client Secret: {token.get('client_secret')}")
     log_info(log_file, "load_credentials", None, "token_info", f"📜 Scopes: {token.get('scopes')}")
 
-    # # Обработка поля expiry
+    # Проверка срока действия токена
     # expiry = token.get("expiry")
     # if expiry:
     #     try:
@@ -83,29 +83,26 @@ def load_credentials(token_path, log_file):
     #         log_error(log_file, "load_credentials", None, "expiry_format_error", f"⚠️ Неверный формат поля expiry: {expiry}", exc=e)
     # else:
     #     log_warning(log_file, "load_credentials", None, "expiry_missing", "⏳ Время жизни токена: Неизвестно")
-    #     if creds.refresh_token:
-    #         log_info(log_file, "load_credentials", None, "refresh_suggestion", "🔄 Попробуйте обновить токен для получения информации о сроке действия.")
 
-    # if creds.expired:
-    #     log_warning(log_file, "load_credentials", None, "token_expired", "🔄 Токен истёк. Требуется обновление.")
-    #     if creds.refresh_token:
-    #         try:
-    #             creds.refresh(Request())
-    #             with open(token_path, "w", encoding="utf-8") as token_file:
-    #                 token_file.write(creds.to_json())
-    #             log_success(log_file, "load_credentials", None, "token_refresh", f"🔄 Токен обновлён: {token_path}")
-    #         except Exception as e:
-    #             log_error(log_file, "load_credentials", None, "token_refresh_fail", f"❌ Ошибка обновления токена {token_path}", exc=e)
-    #             raise RuntimeError(f"❌ Не удалось обновить токен: {token_path}") from e
-    #     else:
-    #         raise RuntimeError(f"❌ Токен истёк и отсутствует refresh_token: {token_path}")
-    # else:
-    #     log_success(log_file, "load_credentials", None, "token_valid", "✅ Токен действителен.")
+    # # Обновление токена, если он истёк
+    # if creds.expired and creds.refresh_token:
+    #     try:
+    #         creds.refresh(Request())
+    #         with open(token_path, "w", encoding="utf-8") as token_file:
+    #             token_file.write(creds.to_json())
+    #         log_success(log_file, "load_credentials", None, "token_refresh", f"🔄 Токен обновлён: {token_path}")
+    #     except Exception as e:
+    #         log_error(log_file, "load_credentials", None, "token_refresh_fail", f"❌ Ошибка обновления токена {token_path}", exc=e)
+    #         raise RuntimeError(f"❌ Не удалось обновить токен: {token_path}") from e
+    # elif creds.expired:
+    #     raise RuntimeError(f"❌ Токен истёк и отсутствует refresh_token: {token_path}")
 
-    if not creds.valid:
-        log_error(log_file, "load_credentials", None, "invalid_token", f"❌ Недействительный токен: {token_path}")
-        raise RuntimeError(f"❌ Недействительный токен: {token_path}")
+    # # Проверка валидности токена
+    # if not creds.valid:
+    #     log_error(log_file, "load_credentials", None, "invalid_token", f"❌ Недействительный токен: {token_path}")
+    #     raise RuntimeError(f"❌ Недействительный токен: {token_path}")
 
+    # Создание службы Google Sheets API
     try:
         service = build("sheets", "v4", credentials=creds)
         log_success(log_file, "load_credentials", None, "auth", f"✅ Авторизация выполнена: {token_name}")

@@ -184,9 +184,9 @@ async def main():
         print(f"⏳ Ретро-сканеры будут работать с интервалом: {start} — {end}")
         # Запуск ретро-потоков
 
-        t1 = threading.Thread(target=run_retro_scanner, args=(RotationsInfoScanner, rotation_retro_tokens, ROTATIONSINFO_RETRO_LOG, start, end), daemon=True)
-        t1.start()
-        scanner_threads.append(t1)
+        # t1 = threading.Thread(target=run_retro_scanner, args=(RotationsInfoScanner, rotation_retro_tokens, ROTATIONSINFO_RETRO_LOG, start, end), daemon=True)
+        # t1.start()
+        # scanner_threads.append(t1)
 
         # t2 = threading.Thread(target=run_retro_scanner, args=(SheetsInfoScanner, sheet_tokens, SHEETSINFO_RETRO_LOG, start, end), daemon=True)
         # t2.start()

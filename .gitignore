@@ -36,3 +36,4 @@ alembic/versions/
 
 alembic.ini
 alembic/script.py.mako
+start_helper.sh

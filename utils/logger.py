@@ -28,7 +28,7 @@ def _log_structured(log_file, level, phase, task=None, status=None, message=None
         with open(log_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
     except Exception as e:
-        print(f"Ошибка записи в лог {log_file}: {e}")
+        print(f"Ошибка записи в лог {log_file}:{log_entry}: {e}")
 
 def log_info(log_file, phase, task=None, status=None, message=None):
     _log_structured(log_file, "INFO", phase, task, status, message)
@@ -40,7 +40,7 @@ def log_warning(log_file, phase, task=None, status=None, message=None):
     _log_structured(log_file, "WARNING", phase, task, status, message)
 
 def log_error(log_file, phase, task=None, status=None, message=None, exc=None):
-    _log_structured(log_file, "ERROR", phase, task, status, message)
+    _log_structured(log_file, "ERROR", phase, task, status, message, error=exc)
 
 def log_section(log_file, phase, message):
     # Добавляем эмодзи и визуальный разделитель

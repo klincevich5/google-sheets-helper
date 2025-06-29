@@ -7,58 +7,42 @@ from sqlalchemy import (
 import enum
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY as PG_ARRAY
+from sqlalchemy import Column, Integer, Text, Date, TIMESTAMP, text
 
 Base = declarative_base()
 
 
-# 📌 Персона (человек)
+# 📌 Персона с периодом работы
 class Person(Base):
     __tablename__ = "Persons"
 
     id = Column(Integer, primary_key=True)
     full_name = Column(String, nullable=False)
-    dealer_nickname = Column(String, nullable=False)  # сделано обязательным
+    dealer_nickname = Column(String, nullable=False)  # Обязательное поле
 
     telegram_id = Column(BigInteger, unique=True, nullable=True)
     whatsapp_number = Column(String, nullable=True)
     photo_fileID = Column(String, nullable=True)
 
-    employment_periods = relationship("EmployeePeriod", back_populates="person")
+    date_start = Column(Date, nullable=False)
+    date_end = Column(Date, nullable=True)
+
+    # Отношения
     user_account = relationship("User", back_populates="person", uselist=False)
     feedbacks = relationship("FeedbackStorage", back_populates="person")
     mistakes = relationship("MistakeStorage", back_populates="person")
     qa_list_records = relationship("QaList", back_populates="person")
     dealer_monthly_statuses = relationship("DealerMonthlyStatus", back_populates="person")
+    schedule_records = relationship("ScheduleOT", back_populates="person")
 
     def __repr__(self):
-        return f"<Person(id={self.id}, full_name='{self.full_name}', nickname='{self.dealer_nickname}')>"
+        return f"<Person(id={self.id}, name='{self.full_name}', nick='{self.dealer_nickname}')>"
 
     __table_args__ = (
         UniqueConstraint("full_name", "dealer_nickname", name="uq_person_fullname_nickname"),
         Index("ix_persons_full_name", "full_name"),
         Index("ix_person_telegram_id", "telegram_id"),
-    )
-
-
-# 📌 Периоды работы
-class EmployeePeriod(Base):
-    __tablename__ = "Employee_periods"
-
-    id = Column(Integer, primary_key=True)
-    person_id = Column(Integer, ForeignKey("Persons.id"), nullable=False)
-    person = relationship("Person", back_populates="employment_periods")
-
-    date_start = Column(Date, nullable=False)
-    date_end = Column(Date, nullable=True)
-
-    schedule_records = relationship("ScheduleOT", back_populates="employee_period")
-
-    def __repr__(self):
-        return f"<EmployeePeriod(id={self.id}, person_id={self.person_id}, {self.date_start}–{self.date_end})>"
-
-    __table_args__ = (
-        Index("ix_employee_periods_person", "person_id"),
-        Index("ix_employee_periods_date", "date_start", "date_end"),
+        Index("ix_person_date", "date_start", "date_end"),
     )
 
 
@@ -67,22 +51,20 @@ class ScheduleOT(Base):
     __tablename__ = 'ScheduleOT'
 
     id = Column(Integer, primary_key=True)
-    employee_period_id = Column(Integer, ForeignKey("Employee_periods.id"), nullable=False)
-    employee_period = relationship("EmployeePeriod", back_populates="schedule_records")
+    person_id = Column(Integer, ForeignKey("Persons.id"), nullable=False)
+    person = relationship("Person", back_populates="schedule_records")
 
     related_date = Column(Date, nullable=False)
     shift_type = Column(Text)
     related_month = Column(Date, nullable=False)
     break_number = Column(Integer, nullable=True)
 
-    def __repr__(self):
-        return f"<ScheduleOT(id={self.id}, date={self.related_date}, shift={self.shift_type})>"
-
     __table_args__ = (
-        UniqueConstraint("employee_period_id", "related_date", name="uq_schedule_per_day"),
+        UniqueConstraint("person_id", "related_date", name="uq_schedule_per_day"),
         Index("ix_schedule_month", "related_month"),
         Index("ix_schedule_date", "related_date"),
     )
+
 
 
 # 📌 Ручной статус на месяц
@@ -93,16 +75,12 @@ class DealerMonthlyStatus(Base):
     person_id = Column(Integer, ForeignKey("Persons.id"), nullable=False)
     person = relationship("Person", back_populates="dealer_monthly_statuses")
 
-    dealer_nicknames = Column(PG_ARRAY(String), server_default='{}')  # Все никнеймы в этом месяце
     related_month = Column(Date, nullable=False)
 
     schedule = Column(Boolean)
     bonus = Column(Boolean)
     qa_list = Column(Boolean)
     feedback_status = Column(Boolean)
-
-    def __repr__(self):
-        return f"<DealerMonthlyStatus(person_id={self.person_id}, month={self.related_month})>"
 
     __table_args__ = (
         UniqueConstraint("person_id", "related_month", name="uq_dealer_month"),
@@ -163,7 +141,7 @@ class FeedbackStorage(Base):
     id = Column(Integer, primary_key=True)
     person_id = Column(Integer, ForeignKey("Persons.id"), nullable=True)
     person = relationship("Person", back_populates="feedbacks")
-
+    feedback_nr = Column(Integer, nullable=False)
     related_month = Column(Date)
     related_date = Column(Date)
     related_shift = Column(Text)
@@ -178,10 +156,11 @@ class FeedbackStorage(Base):
     action_taken = Column(Text)
     forwarded_feedback = Column(Text)
     comment_after_forwarding = Column(Text)
-
+        
     __table_args__ = (
         Index("ix_feedback_person_id", "person_id"),
         Index("ix_feedback_related_date", "related_date"),
+        UniqueConstraint("dealer_name", "feedback_nr", name="uq_feedback_dealer_nr"),
     )
 
 
@@ -219,33 +198,62 @@ class QaList(Base):
     person = relationship("Person", back_populates="qa_list_records")
     dealer_name = Column(String, nullable=False)
 
-    VIP = Column(String, nullable=False)
-    GENERIC = Column(String, nullable=False)
-    LEGENDZ = Column(String, nullable=False)
-    GSBJ = Column(String, nullable=False)
-    TURKISH = Column(String, nullable=False)
-    TRISTAR = Column(String, nullable=False)
-    TritonRL = Column(String, nullable=False)
+    vip = Column(String, nullable=False)
+    generic = Column(String, nullable=False)
+    legendz = Column(String, nullable=False)
+    gsbj = Column(String, nullable=False)
+    turkish = Column(String, nullable=False)
+    tristar = Column(String, nullable=False)
+    tritonrl = Column(String, nullable=False)
 
-    QA_comment = Column(String)
+    qa_comment = Column(String)
 
-    Male = Column(String, nullable=False)
-    BJ = Column(String, nullable=False)
-    BC = Column(String, nullable=False)
-    RL = Column(String, nullable=False)
-    DT = Column(String, nullable=False)
-    HSB = Column(String, nullable=False)
-    swBJ = Column(String, nullable=False)
-    swBC = Column(String, nullable=False)
-    swRL = Column(String, nullable=False)
-    SH = Column(String, nullable=False)
-    gsDT = Column(String, nullable=False)
+    male = Column(String, nullable=False)
+    bj = Column(String, nullable=False)
+    bc = Column(String, nullable=False)
+    rl = Column(String, nullable=False)
+    dt = Column(String, nullable=False)
+    hsb = Column(String, nullable=False)
+    swbj = Column(String, nullable=False)
+    swbc = Column(String, nullable=False)
+    swrl = Column(String, nullable=False)
+    sh = Column(String, nullable=False)
+    gsdt = Column(String, nullable=False)
 
     __table_args__ = (
         UniqueConstraint('dealer_name', name='uq_dealer_name'),
         Index("ix_qalist_person_id", "person_id"),
     )
 
+class GamingTable(Base):
+    __tablename__ = "GamingTables"
+
+    id = Column(Integer, primary_key=True)
+
+    status = Column(Integer, nullable=False)
+    local_name = Column(Text, nullable=False)
+    active_from = Column(Date, nullable=False)
+    active_until = Column(Date)
+
+    notes = Column(Text)
+
+    table_id = Column(Text, nullable=False)
+    gaming_floor = Column(Text, nullable=False)
+    dealers_game = Column(Text, nullable=False)
+    floor_number = Column(Integer)
+    end_user = Column(Text)
+
+    dui_nr = Column(Text)
+    vnc_ip = Column(Text)
+    vnc_password = Column(Text)
+    rec_by = Column(Text)
+    encoder_ip = Column(Text)
+    encoder_password = Column(Text)
+
+    __table_args__ = (
+        UniqueConstraint('local_name', 'active_from', 'table_id', name='uq_gamingtables_local_from_tableid'),
+        Index('ix_gamingtables_status_floor_game', 'status', 'gaming_floor', 'dealers_game'),
+    )
 
 # 📌 Настройки, шаблоны и таблицы
 class BotSettings(Base):
@@ -339,7 +347,7 @@ class SheetsInfo(Base):
     scan_failures = Column(Integer)
     hash = Column(String)
     process_data_method = Column(String)
-    values_json = Column(Text)
+    values_json = Column(JSONB)
     target_table_type = Column(String)
     target_page_name = Column(String)
     target_page_area = Column(String)
