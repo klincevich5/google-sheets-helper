@@ -28,7 +28,6 @@ from database.session import get_session, SessionLocal, engine
 from core.data import return_tracked_tables
 from scanners.rotationsinfo_scanner import RotationsInfoScanner
 from scanners.sheetsinfo_scanner import SheetsInfoScanner
-# from scanners.monitoring_storage_scanner import MonitoringStorageScanner
 from core.timezone import now
 from core.time_provider import TimeProvider
 
@@ -43,10 +42,6 @@ rotation_retro_tokens = {
 sheet_tokens = {
     "SheetsInfo_scanner_1": SHEETSINFO_TOKEN
 }
-
-# monitoring_tokens = {
-#     "SheetsInfo_scanner_1": SHEETSINFO_TOKEN
-# }
 
 stop_event = threading.Event()
 scanner_threads = []
@@ -182,6 +177,7 @@ async def main():
         start = parse_date_arg(scan_start)
         end = parse_date_arg(scan_end)
         print(f"⏳ Ретро-сканеры будут работать с интервалом: {start} — {end}")
+        
         # Запуск ретро-потоков
 
         # t1 = threading.Thread(target=run_retro_scanner, args=(RotationsInfoScanner, rotation_retro_tokens, ROTATIONSINFO_RETRO_LOG, start, end), daemon=True)

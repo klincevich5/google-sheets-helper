@@ -97,7 +97,7 @@ def get_related_month(now_time=None):
     - иначе related_month — текущий месяц
     """
     now_time = now_time or TimeProvider.now()
-    if now_time.day == 1 and now_time.hour < 9:
+    if now_time.day == 1 and now_time.hour < 8:
         # Предыдущий месяц
         prev_month = (now_time.replace(day=1) - timedelta(days=1)).replace(day=1)
         return prev_month.date()
