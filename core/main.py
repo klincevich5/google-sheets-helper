@@ -36,11 +36,11 @@ rotation_tokens = {
 }
 
 rotation_retro_tokens = {
-    "RotationsInfo_scanner_2": ROTATIONSINFO_TOKEN_2
+    "SheetsInfo_scanner_1": SHEETSINFO_TOKEN
 }
 
 sheet_tokens = {
-    "SheetsInfo_scanner_1": SHEETSINFO_TOKEN
+    "RotationsInfo_scanner_2": ROTATIONSINFO_TOKEN_2
 }
 
 stop_event = threading.Event()

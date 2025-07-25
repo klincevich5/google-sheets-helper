@@ -8,9 +8,22 @@ import enum
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY as PG_ARRAY
 from sqlalchemy import Column, Integer, Text, Date, TIMESTAMP, text
+from sqlalchemy.sql import func
 
 Base = declarative_base()
 
+class LogEntry(Base):
+    __tablename__ = "Logs"
+
+    id = Column(Integer, primary_key=True)
+    log_source = Column(Text, nullable=False)
+    timestamp = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+    level = Column(Text, nullable=False)
+    phase = Column(Text)
+    task = Column(Text)
+    status = Column(Text)
+    message = Column(Text)
+    error = Column(Text)
 
 # 📌 Персона с периодом работы
 class Person(Base):

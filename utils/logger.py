@@ -4,6 +4,8 @@ import json
 import traceback
 from datetime import datetime
 from core.timezone import timezone, now
+from database.session import get_session
+from database.db_models import LogEntry
 
 def _log_structured(log_file, level, phase, task=None, status=None, message=None, error=None):
     # Добавляем эмодзи к level для наглядности
@@ -22,13 +24,37 @@ def _log_structured(log_file, level, phase, task=None, status=None, message=None
         "phase": phase,
         "task": task,
         "status": status,
-        "error": error,
+        "error": str(error) if error else None,   # <-- Важно!
     }
     try:
         with open(log_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
     except Exception as e:
         print(f"Ошибка записи в лог {log_file}:{log_entry}: {e}")
+
+    # ✅ Пишем в БД
+    _log_to_db(log_file, level_with_emoji, phase, task, status, message, str(error) if error else None)
+
+def _log_to_db(log_source, level, phase, task=None, status=None, message=None, error=None):
+    """
+    Сохраняет запись лога в PostgreSQL через get_session.
+    """
+    try:
+        with get_session() as session:
+            entry = LogEntry(
+                log_source=log_source,
+                timestamp=now(),
+                level=level,
+                phase=phase,
+                task=task,
+                status=status,
+                message=message,
+                error=str(error) if error else None
+            )
+            session.add(entry)
+            # Коммит не нужен — get_session() сам делает commit внутри блока
+    except Exception as db_exc:
+        print(f"⚠️ Не удалось сохранить лог в БД: {db_exc}")
 
 def log_info(log_file, phase, task=None, status=None, message=None):
     _log_structured(log_file, "INFO", phase, task, status, message)

@@ -1,17 +1,12 @@
-# database/session.py
-
 import os
 import threading
 import traceback
 import datetime
-import time
 from contextlib import contextmanager
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
-
-from core.config import MAIN_LOG
-from utils.logger import log_info, log_warning, log_error
 
 load_dotenv()
 
@@ -35,6 +30,7 @@ SessionLocal = sessionmaker(bind=engine)
 # Словарь сессий по потокам
 SESSION_STACK = {}
 
+
 @contextmanager
 def get_session():
     """
@@ -57,14 +53,14 @@ def get_session():
 
     SESSION_STACK.setdefault(thread_id, []).append(stack_info)
 
-    log_info(MAIN_LOG, "session", status="open", message=f"🛜🛜🛜Открытие сессии {session_id} в потоке '{thread_name}'")
+    # print(f"🛜 [SESSION] Открыта сессия {session_id} в потоке '{thread_name}'")
 
     try:
         yield session
         session.commit()
     except Exception as exc:
         session.rollback()
-        log_error(MAIN_LOG, "session", status="rollback", message=f"❗️❗️❗️Ошибка в сессии {session_id}: {exc}")
+        print(f"❗️❗️❗️ [SESSION] Ошибка в сессии {session_id}: {exc}")
         raise
     finally:
         SESSION_STACK[thread_id] = [
@@ -74,23 +70,18 @@ def get_session():
         if not SESSION_STACK[thread_id]:
             del SESSION_STACK[thread_id]
 
-        log_info(MAIN_LOG, "session", status="close", message=f"🛑 Закрытие сессии {session_id} в потоке '{thread_name}'")
+        # print(f"🛑 [SESSION] Закрыта сессия {session_id} в потоке '{thread_name}'")
 
         # Детализированная проверка: остались ли незакрытые
-        if SESSION_STACK:
-            now = datetime.datetime.now()
-            for tid, stack in SESSION_STACK.items():
-                for s in stack:
-                    age = int((now - s['created_at']).total_seconds())
-                    log_warning(
-                        MAIN_LOG,
-                        "session",
-                        status="left_open",
-                        message=(
-                            f"⚠️ Сессия {s['id']} всё ещё открыта в потоке {s['thread_name']} (ID: {tid})\n"
-                            f"⏱️ Время жизни: {age} сек\n"
-                            f"🔍 Stack (top): {s['trace'].splitlines()[-2]}"
-                        )
-                    )
-        else:
-            log_info(MAIN_LOG, "session", status="clean", message="♻️♻️♻️Все сессии закрыты. Стек пуст.")
+        # if SESSION_STACK:
+        #     now = datetime.datetime.now()
+        #     for tid, stack in SESSION_STACK.items():
+        #         for s in stack:
+        #             age = int((now - s['created_at']).total_seconds())
+        #             print(
+        #                 f"⚠️ [SESSION] Сессия {s['id']} всё ещё открыта в потоке {s['thread_name']} (ID: {tid})\n"
+        #                 f"⏱️ Время жизни: {age} сек\n"
+        #                 f"🔍 Stack (top): {s['trace'].splitlines()[-2]}"
+        #             )
+        # else:
+        #     print("♻️♻️♻️ [SESSION] Все сессии закрыты. Стек пуст.")
