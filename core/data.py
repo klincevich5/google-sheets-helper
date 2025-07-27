@@ -1,7 +1,7 @@
 # core/data.py
 
 from datetime import datetime, timedelta
-
+from core.task_model import Task
 from sqlalchemy import text
 
 from database.db_models import TrackedTables, TaskTemplate, RotationsInfo, SheetsInfo
@@ -210,28 +210,36 @@ def load_rotationsinfo_tasks(session, log_file):
         raise
     finally:
         session.close()
-
+        
 def load_sheetsinfo_tasks(session, log_file):
+    """
+    Загружает задачи из SheetsInfo, создаёт недостающие на основе шаблонов, фильтрует по времени сканирования.
+    Возвращает список Task-объектов, готовых к выполнению.
+    """
     log_section(log_file, "define_tasks", "🔼 Фаза определения задач (SheetsInfo)")
     now_time = TimeProvider.now()
     related_month = get_related_month(now_time)
     log_info(log_file, "define_tasks", None, "now", f"🕒 Сейчас: {now_time}. related_month: {related_month}")
 
     try:
+        # Шаг 1: получаем шаблоны
         templates = session.query(TaskTemplate).filter_by(source_table="SheetsInfo").all()
         template_names = [tmpl.name_of_process for tmpl in templates]
         log_info(log_file, "define_tasks", None, "templates", f"📚 Количество шаблонов: {len(templates)}")
 
+        # Шаг 2: получаем задачи из БД
         all_tasks = session.query(SheetsInfo).filter(
             SheetsInfo.related_month == related_month,
             SheetsInfo.name_of_process.in_(template_names)
         ).all()
-        log_info(log_file, "define_tasks", None, "db_tasks", f"📦 Количество задач в БД для related_month={related_month}: {len(all_tasks)}")
+        log_info(log_file, "define_tasks", None, "db_tasks",
+                f"📦 Количество задач в БД для related_month={related_month}: {len(all_tasks)}")
 
         existing = {t.name_of_process: t for t in all_tasks}
-
         new_tasks = []
         created_count = 0
+
+        # Шаг 3: создаём недостающие задачи
         for tmpl in templates:
             if tmpl.name_of_process not in existing:
                 try:
@@ -261,51 +269,67 @@ def load_sheetsinfo_tasks(session, log_file):
                     new_tasks.append(new_task)
                     existing[tmpl.name_of_process] = new_task
                     created_count += 1
-                    log_success(log_file, "define_tasks", tmpl.name_of_process, "created", f"Задача '{tmpl.name_of_process}' создана.")
+                    log_success(log_file, "define_tasks", tmpl.name_of_process, "created",
+                                f"Задача '{tmpl.name_of_process}' создана.")
                 except Exception as e:
-                    log_error(log_file, "define_tasks", getattr(tmpl, 'name_of_process', None), "fail", f"Ошибка при создании задачи: {e}", exc=e)
+                    log_error(log_file, "define_tasks", getattr(tmpl, 'name_of_process', None),
+                            "fail", "Ошибка при создании задачи", exc=e)
+
         log_info(log_file, "define_tasks", None, "new_tasks", f"Создано новых задач: {created_count}")
 
         if new_tasks:
-            session.bulk_save_objects(new_tasks)
-            session.commit()
-            log_success(log_file, "define_tasks", None, "saved", f"📥 Сохранено новых задач: {len(new_tasks)}")
+            try:
+                session.bulk_save_objects(new_tasks, return_defaults=True)
+                session.commit()
+                log_success(log_file, "define_tasks", None, "saved",
+                            f"📥 Сохранено новых задач: {len(new_tasks)}")
+            except Exception as e:
+                session.rollback()
+                log_error(log_file, "define_tasks", None, "db_commit",
+                        "Ошибка при сохранении новых задач", exc=e)
 
+        # Шаг 4: фильтрация только активных
         active_tasks = session.query(SheetsInfo).filter(
             SheetsInfo.related_month == related_month,
             SheetsInfo.name_of_process.in_(template_names),
             SheetsInfo.is_active == 1
-        ).all()
-        log_info(log_file, "define_tasks", None, "active", f"✅ Количество активных задач: {len(active_tasks)}")
+        ).order_by(SheetsInfo.name_of_process.asc()).all()
+        log_info(log_file, "define_tasks", None, "active",
+                f"✅ Количество активных задач: {len(active_tasks)}")
 
+        # Шаг 5: отбор по интервалу + формирование Task
         tasks = []
-        for task in active_tasks:
+        for task_obj in active_tasks:
             try:
-                last_scan = parse_datetime(task.last_scan)
-                next_scan = last_scan + timedelta(seconds=task.scan_interval)
-                minutes_left = int((next_scan - now_time).total_seconds() / 60)
-                log_info(log_file, "define_tasks", task.name_of_process, "ready",
-                    f"[✅READY] Task '{task.name_of_process} {task.source_page_name} related_month {task.related_month} is_active {task.is_active}' | "
-                    f"Last scan: {last_scan:%Y-%m-%d %H:%M:%S} | "
-                    f"Interval: {task.scan_interval // 60} min | "
-                    f"In: {minutes_left} min | "
-                    f"Next scan at: {next_scan:%Y-%m-%d %H:%M} | "
-                    f"Now: {now_time:%Y-%m-%d %H:%M:%S}"
-                )
-                built_task = build_task(task, now_time, "SheetsInfo")
-                # Проверка assign_doc_ids (если используется)
-                if hasattr(built_task, 'assign_doc_ids'):
-                    doc_id_map = getattr(task, 'doc_id_map', None)
-                    if doc_id_map:
-                        ok = built_task.assign_doc_ids(doc_id_map)
-                        log_info(log_file, "define_tasks", task.name_of_process, "assign_doc_ids", f"assign_doc_ids вернул: {ok}")
+                built_task = Task(task_obj.__dict__)
+
+                if not built_task.is_ready_to_scan():
+                    next_scan = built_task.last_scan + timedelta(seconds=built_task.scan_interval)
+                    minutes_left = int((next_scan - now_time).total_seconds() / 60)
+                    log_info(log_file, "define_tasks", built_task.name_of_process, "skip",
+                            f"[⏳SKIP] Слишком рано. Next scan at: {next_scan:%Y-%m-%d %H:%M}, in {minutes_left} min.")
+                    continue
+
+                log_info(log_file, "define_tasks", built_task.name_of_process, "ready",
+                        f"[✅READY] Task '{built_task.name_of_process} {built_task.source_page_name}' | "
+                        f"Last scan: {built_task.last_scan} | "
+                        f"Interval: {built_task.scan_interval // 60} min")
+
                 tasks.append(built_task)
+
             except Exception as e:
-                log_error(log_file, "define_tasks", getattr(task, 'name_of_process', None), "fail", f"Ошибка при обработке задачи: {e}", exc=e)
-        log_success(log_file, "define_tasks", None, "done", f"✅ Готово. Всего задач к запуску: {len(tasks)}")
+                log_error(log_file, "define_tasks", getattr(task_obj, 'name_of_process', None),
+                        "fail", "Ошибка при обработке задачи", exc=e)
+
+        log_success(log_file, "define_tasks", None, "done",
+                    f"✅ Готово. Всего задач к запуску: {len(tasks)}")
         return tasks
+
     except Exception as e:
         session.rollback()
+        log_error(log_file, "define_tasks", None, "fatal",
+                "Не удалось определить задачи", exc=e)
         raise
+
     finally:
         session.close()

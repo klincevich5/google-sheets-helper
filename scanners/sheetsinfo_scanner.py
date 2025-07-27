@@ -1,11 +1,12 @@
 # scanners/sheetsinfo_scanner.py
 
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from collections import defaultdict
 import traceback
 import calendar
 import json
+from typing import Optional
 
 from tg_bot.utils.settings_access import is_scanner_enabled
 from core.data import load_sheetsinfo_tasks
@@ -16,7 +17,7 @@ from utils.db_orm import get_max_last_row
 from utils.floor_resolver import get_floor_by_table_name
 from database.session import get_session
 
-from database.db_models import MistakeStorage, FeedbackStorage,  ScheduleOT, DealerMonthlyStatus, QaList
+from database.db_models import GamingTable, MistakeStorage, FeedbackStorage,  ScheduleOT, DealerMonthlyStatus, QaList
 
 from core.config import (
     SHEETSINFO_LOG,
@@ -34,8 +35,13 @@ from utils.utils import (
     batch_get,
     batch_update,
 )
+from .sheetsinfo_imports import (
+    import_mistakes_to_update,
+    import_feedbacks_to_update,
+    import_qa_list_to_update,
+)
 
-class SheetsInfoScanner:
+class SheetsInfoScanner:  
     """
     SheetsInfoScanner — основной исполнительный класс для сканирования, обработки и обновления задач по Google Sheets.
     """
@@ -49,6 +55,7 @@ class SheetsInfoScanner:
     def run(self):
         """
         Основной цикл работы сканера: загрузка задач, сканирование, обработка, обновление.
+        Каждая фаза работает в отдельной сессии, чтобы ошибки не влияли на остальные фазы.
         """
         while True:
             if not is_scanner_enabled("sheets_scanner"):
@@ -62,27 +69,29 @@ class SheetsInfoScanner:
                 token_path = self.token_map[token_name]
                 self.token_name = token_name
 
+                # Сервис и doc_id_map инициализируем один раз
                 with get_session() as session:
                     self.service = load_credentials(token_path, self.log_file)
                     log_info(self.log_file, "run", None, "token", f"Используется токен: {self.token_name}")
-                    # <--- ДОБАВЛЕНО: актуализируем doc_id_map перед фазами --->
                     from core.data import return_tracked_tables
                     self.doc_id_map = return_tracked_tables(session)
-                    # <--- КОНЕЦ ДОБАВЛЕНИЯ --->
-                    for phase_name, method in [
-                        ("load_tasks", lambda: self.load_tasks(session)),
-                        ("scan_phase", lambda: self.scan_phase(session)),
-                        ("process_phase", lambda: self.process_phase(session)),
-                        ("update_phase", lambda: self.update_phase(session)),
-                    ]:
-                        log_separator(self.log_file, phase_name)
-                        try:
-                            log_info(self.log_file, phase_name, None, "start", f"Старт этапа {phase_name}")
-                            method()
-                            log_success(self.log_file, phase_name, None, "finish", f"Этап {phase_name} завершён\n")
-                        except Exception as e:
-                            log_error(self.log_file, phase_name, None, "fail", "Ошибка на этапе", exc=e)
-                            raise
+
+                # Каждая фаза — отдельная сессия
+                for phase_name, method in [
+                    ("load_tasks", self.load_tasks),
+                    ("scan_phase", self.scan_phase),
+                    ("process_phase", self.process_phase),
+                    ("update_phase", self.update_phase),
+                ]:
+                    log_separator(self.log_file, phase_name)
+                    try:
+                        log_info(self.log_file, phase_name, None, "start", f"Старт этапа {phase_name}")
+                        with get_session() as session:
+                            method(session)
+                        log_success(self.log_file, phase_name, None, "finish", f"Этап {phase_name} завершён\n")
+                    except Exception as e:
+                        log_error(self.log_file, phase_name, None, "fail", f"Ошибка на этапе {phase_name}", exc=e)
+                        # Не прерываем цикл, просто логируем ошибку
 
             except Exception as e:
                 log_error(self.log_file, "run", None, "fail", "Критическая ошибка в основном цикле", exc=e)
@@ -92,47 +101,34 @@ class SheetsInfoScanner:
             interval = max(SHEETINFO_INTERVAL, 3)
             time.sleep(interval)
 
-
-    def _commit_or_rollback(self, session, log_msg=None):
-        """
-        Коммитит транзакцию или делает rollback при ошибке.
-        """
-        try:
-            session.commit()
-        except Exception as e:
-            session.rollback()
-            if log_msg:
-                log_error(self.log_file, "SheetsInfoScanner", "_commit_or_rollback", None, "commit_fail", f"{log_msg}: {e}")
-
-    def _is_valid_qa_row(self, row):
-        """
-        Проверяет, что строка QA List валидна для добавления в БД.
-        """
-        # Минимум dealer_name и хотя бы один TRUE/FALSE в ключевых полях
-        if not row or len(row) < 18:
-            return False
-        if not row[0] or not isinstance(row[0], str):
-            return False
-        # Можно добавить дополнительные проверки по уникальным полям
-        return True
-
 #############################################################################################
 # загрузка задач из БД
 #############################################################################################
 
     def load_tasks(self, session):
         log_section(self.log_file, "load_tasks", "📥 Загрузка задач из SheetsInfo")
+
+        # Загружаем с передачей doc_id_map
         self.tasks = load_sheetsinfo_tasks(session, self.log_file)
+
         if not self.tasks:
             log_info(self.log_file, "load_tasks", None, "empty", "Нет активных задач для сканирования")
             self.tasks = []
             return
+
         skipped = 0
         for task in self.tasks:
-            if not task.assign_doc_ids(self.doc_id_map, self.log_file):
+            try:
+                ok = task.assign_doc_ids(self.doc_id_map, self.log_file)
+                if not ok:
+                    skipped += 1
+                    log_warning(self.log_file, "load_tasks", task.name_of_process, "skipped", "Нет doc_id, задача пропущена")
+            except Exception as e:
                 skipped += 1
-                log_warning(self.log_file, "load_tasks", getattr(task, 'name_of_process', None), "skipped", "Нет doc_id, задача пропущена")
-        log_info(self.log_file, "load_tasks", None, "done", f"Загружено задач: {len(self.tasks)}, пропущено без doc_id: {skipped}")
+                log_error(self.log_file, "load_tasks", task.name_of_process, "fail", "Ошибка в assign_doc_ids", exc=e)
+
+        log_info(self.log_file, "load_tasks", None, "done",
+                f"Загружено задач: {len(self.tasks)}, пропущено без doc_id: {skipped}")
 
 #############################################################################################
 # Фаза сканирования
@@ -140,50 +136,58 @@ class SheetsInfoScanner:
 
     def scan_phase(self, session):
         log_section(self.log_file, "scan_phase", "🔍 Фаза сканирования")
+
         if not self.tasks:
             log_info(self.log_file, "scan_phase", None, "empty", "Нет задач для сканирования")
             return
-        ready_tasks = [task for task in self.tasks if task.is_ready_to_scan()]
-        log_info(self.log_file, "scan_phase", None, "ready", f"Готовых задач: {len(ready_tasks)}")
-        if not ready_tasks:
-            log_info(self.log_file, "scan_phase", None, "empty", "Нет задач, готовых к сканированию")
-            return
+
+        # 🧩 Группировка по scan_group
         scan_groups = defaultdict(list)
-        for task in ready_tasks:
-            if not task.assign_doc_ids(self.doc_id_map, self.log_file):
-                log_warning(self.log_file, "scan_phase", getattr(task, 'name_of_process', None), "skipped", "Не удалось сопоставить doc_id. Пропуск.")
-                continue
+        for task in self.tasks:
             scan_groups[task.scan_group].append(task)
+
+        # 📦 Обработка каждой группы
         for scan_group, group_tasks in scan_groups.items():
             log_section(self.log_file, "scan_phase", f"\n🗂️ Обработка scan_group: {scan_group} ({len(group_tasks)} задач)\n")
             if not group_tasks:
                 continue
+
             doc_id = group_tasks[0].source_doc_id
             unique_sheet_names = set(task.source_page_name for task in group_tasks)
+
+            # ✅ Проверка наличия листов (первая работа с API)
             exists_map = {
                 sheet_name: check_sheet_exists(self.service, doc_id, sheet_name, self.log_file, self.token_name)
                 for sheet_name in unique_sheet_names
             }
+
             for sheet_name, exists in exists_map.items():
                 log_info(self.log_file, "scan_phase", None, "sheet_exists", f"Лист '{sheet_name}' {'существует' if exists else 'не найден'}")
+
+            # 🧾 Фильтрация валидных задач
             valid_tasks = []
             for task in group_tasks:
-                sheet_name = task.source_page_name
-                if exists_map.get(sheet_name):
+                if exists_map.get(task.source_page_name):
                     valid_tasks.append(task)
                 else:
-                    log_warning(self.log_file, "scan_phase", task.name_of_process, "skipped", f"Лист '{sheet_name}' не найден")
+                    log_warning(self.log_file, "scan_phase", task.name_of_process, "skipped", f"Лист '{task.source_page_name}' не найден")
                     task.update_after_scan(success=False)
                     update_task_scan_fields(session, task, self.log_file, table_name="SheetsInfo")
+
             if not valid_tasks:
                 log_info(self.log_file, "scan_phase", None, "empty", f"Все задачи группы {scan_group} отфильтрованы. Пропуск batchGet.")
                 continue
+
+            # 🔗 Группировка по диапазонам
             range_to_tasks = defaultdict(list)
             for task in valid_tasks:
                 range_str = f"{task.source_page_name}!{task.source_page_area}"
                 range_to_tasks[range_str].append(task)
+
             ranges = list(range_to_tasks.keys())
             log_info(self.log_file, "scan_phase", None, "batch_get", f"Отправка batchGet на документ {task.source_table_type} с {len(ranges)} диапазонами")
+
+            # 📥 batchGet запрос
             response_data = batch_get(
                 self.service,
                 doc_id,
@@ -192,26 +196,34 @@ class SheetsInfoScanner:
                 self.log_file,
                 self.token_name
             )
+
+            # ❌ Ошибка запроса — все задачи failed
             if not response_data:
                 for task in valid_tasks:
                     task.update_after_scan(success=False)
                     update_task_scan_fields(session, task, self.log_file, table_name="SheetsInfo")
                 log_warning(self.log_file, "scan_phase", None, "empty", "Пустой ответ от batchGet. Все задачи будут отмечены как неудачные.")
                 continue
+
+            # ✅ Очистка ключей от кавычек
             normalized_response = {}
             for k, v in response_data.items():
                 clean_key = k.replace("'", "")
                 if "!" in clean_key:
                     sheet_name, cells_range = clean_key.split("!", 1)
                     normalized_response[(sheet_name.strip(), cells_range.strip())] = v
+
+            # 📤 Назначение значений задачам
             for task in valid_tasks:
                 expected_sheet = task.source_page_name.strip()
                 expected_area_start = task.source_page_area.split(":")[0].strip()
                 matched_values = None
+
                 for (sheet_name, cells_range), values in normalized_response.items():
                     if sheet_name == expected_sheet and cells_range.startswith(expected_area_start):
                         matched_values = values
                         break
+
                 if matched_values:
                     task.raw_values_json = matched_values
                     task.update_after_scan(success=True)
@@ -221,10 +233,13 @@ class SheetsInfoScanner:
                     task.update_after_scan(success=False)
                     update_task_scan_fields(session, task, self.log_file, table_name="SheetsInfo")
                     log_warning(self.log_file, "scan_phase", task.name_of_process, "not_found", f"Диапазон {expected_sheet}!{task.source_page_area} не найден или пуст.")
+
+        # 🧾 Финальный отчёт
         log_info(self.log_file, "scan_phase", None, "summary", "\n".join(
             [f"• {task.name_of_process} {task.source_page_name}: scanned={task.scanned}, processed={task.proceed}, changed={task.changed}, uploaded={task.uploaded}"
-             for task in self.tasks]
+            for task in self.tasks]
         ) + "\n")
+
         log_success(self.log_file, "scan_phase", None, "finish", "Фаза сканирования завершена\n")
 
 #############################################################################################
@@ -253,14 +268,16 @@ class SheetsInfoScanner:
                 if task.changed:
                     try:
                         update_task_process_fields(session, task, self.log_file, table_name="SheetsInfo")
+                        session.commit()  # коммитим изменения по задаче
                         log_success(self.log_file, "process_phase", task.name_of_process, "changed", "Данные изменены и сохранены")
                     except Exception as e:
+                        session.rollback()  # откатываем только изменения по этой задаче
                         log_error(self.log_file, "process_phase", task.name_of_process, "fail", "Ошибка при сохранении изменений в БД", exc=e)
             except Exception as e:
                 log_error(self.log_file, "process_phase", task.name_of_process, "fail", "Неизвестная ошибка при обработке", exc=e)
         log_info(self.log_file, "process_phase", None, "summary", "\n".join(
             [f"• {task.name_of_process} {task.source_page_name}: scanned={task.scanned}, processed={task.proceed}, changed={task.changed}, uploaded={task.uploaded}"
-             for task in self.tasks]
+            for task in self.tasks]
         ) + "\n")
         log_success(self.log_file, "process_phase", None, "finish", "Фаза обработки завершена\n")
 
@@ -271,109 +288,51 @@ class SheetsInfoScanner:
     def update_phase(self, session):
         log_section(self.log_file, "update_phase", "🔼 Фаза обновления")
 
-        # --- Категоризация задач ---
         tasks_to_update = []
-        mistakes_to_update = []
-        feedback_to_update = []
-        schedule_OT_to_update = []
-        qa_list_update = []
+        grouped_tasks = defaultdict(list)
 
         for t in self.tasks:
             if not (t.values_json and t.changed):
+                log_warning(self.log_file, "update_phase", t.name_of_process, "skipped", f"Пропуск задачи {t.name_of_process}: нет изменений или пустой values_json")
                 continue
-            if t.update_group == "update_mistakes_in_db":
-                mistakes_to_update.append(t)
-            elif t.update_group == "feedback_status_update":
-                feedback_to_update.append(t)
-            elif t.update_group == "update_schedule_OT":
-                schedule_OT_to_update.append(t)
-            elif t.update_group == "update_qa_list_db":
-                qa_list_update.append(t)
-            else:
-                tasks_to_update.append(t)
-
-        # --- Логгирование категорий ---
-        log_info(self.log_file, "update_phase", None, "tasks_to_update", f"🔼 Задач для обновления: {len(tasks_to_update)}")
-        for task in tasks_to_update:
-            log_info(self.log_file, "update_phase", task.name_of_process, "tasks_to_update", f"   • {task.name_of_process} ({task.update_group})")
-        log_info(self.log_file, "update_phase", None, "mistakes_to_update", f"🔼 Ошибок для обновления: {len(mistakes_to_update)}")
-        for task in mistakes_to_update:
-            log_info(self.log_file, "update_phase", task.name_of_process, "mistakes_to_update", f"   • {task.name_of_process} ({task.update_group})")
-        log_info(self.log_file, "update_phase", None, "feedback_to_update", f"🔼 Фидбеков для обновления: {len(feedback_to_update)}")
-        for task in feedback_to_update:
-            log_info(self.log_file, "update_phase", task.name_of_process, "feedback_to_update", f"   • {task.name_of_process} ({task.update_group})")
-        log_info(self.log_file, "update_phase", None, "schedule_OT_to_update", f"🔼 Schedule OT для обновления: {len(schedule_OT_to_update)}")
-        for task in schedule_OT_to_update:
-            log_info(self.log_file, "update_phase", task.name_of_process, "schedule_OT_to_update", f"   • {task.name_of_process} ({task.update_group})")
-        log_info(self.log_file, "update_phase", None, "qa_list_update", f"🔼 QA List для обновления: {len(qa_list_update)}")
-        for task in qa_list_update:
-            log_info(self.log_file, "update_phase", task.name_of_process, "qa_list_update", f"   • {task.name_of_process} ({task.update_group})")
+            grouped_tasks[t.update_group].append(t)
 
         # --- Обычные задачи ---
+        for group, tasks in grouped_tasks.items():
+            if group in {"update_mistakes_in_db", "feedback_status_update", "update_schedule_OT", "update_qa_list_db"}:
+                continue
+            tasks_to_update.extend(tasks)
+
         if tasks_to_update:
             log_info(self.log_file, "update_phase", None, "tasks_to_update", f"🔼 Обновление обычных задач: {len(tasks_to_update)}")
             try:
                 self.import_tasks_to_update(tasks_to_update, session)
             except Exception as e:
+                session.rollback()
                 log_error(self.log_file, "update_phase", None, "tasks_to_update_fail", f"❌ Ошибка при обновлении задач: {e}")
             time.sleep(3)
 
-        # # --- Ошибки ---
-        # if mistakes_to_update:
-        #     log_info(self.log_file, "update_phase", None, "mistakes_to_update", f"🔼 Обновление ошибок: {len(mistakes_to_update)}")
-        #     try:
-        #         self.import_mistakes_to_update(mistakes_to_update, session)
-        #         for t in mistakes_to_update:
-        #             t.update_after_upload(success=True)
-        #             update_task_update_fields(session, t, self.log_file, table_name="SheetsInfo")
-        #         session.commit()
-        #     except Exception as e:
-        #         session.rollback()
-        #         log_error(self.log_file, "update_phase", None, "mistakes_to_update_fail", f"❌ Ошибка при обновлении ошибок: {e}")
-        #     time.sleep(3)
+        # --- Специальные группы ---
+        special_groups = [
+            ("update_mistakes_in_db", lambda tasks, session: self._safe_import(import_mistakes_to_update, tasks, session)),
+            ("feedback_status_update", lambda tasks, session: self._safe_import(import_feedbacks_to_update, tasks, session)),
+            ("update_schedule_OT", self.import_schedule_OT_to_update),
+            ("update_qa_list_db", lambda tasks, session: self._safe_import(import_qa_list_to_update, tasks, session)),
+        ]
 
-        # # --- Фидбеки ---
-        # if feedback_to_update:
-        #     log_info(self.log_file, "update_phase", None, "feedback_to_update", f"🔼 Обновление фидбеков: {len(feedback_to_update)}")
-        #     try:
-        #         self.import_feedbacks_to_update(feedback_to_update, self.service, session)
-        #         for t in feedback_to_update:
-        #             t.update_after_upload(success=True)
-        #             update_task_update_fields(session, t, self.log_file, table_name="SheetsInfo")
-        #         session.commit()
-        #     except Exception as e:
-        #         session.rollback()
-        #         log_error(self.log_file, "update_phase", None, "feedback_to_update_fail", f"❌ Ошибка при обновлении фидбеков: {e}")
+        for group_name, handler in special_groups:
+            group_tasks = grouped_tasks.get(group_name, [])
+            if not group_tasks:
+                continue
 
-        # # --- Schedule OT ---
-        # if schedule_OT_to_update:
-        #     log_info(self.log_file, "update_phase", None, "schedule_OT_to_update", f"🔼 Обновление графиков OT: {len(schedule_OT_to_update)}")
-        #     try:
-        #         self.import_schedule_OT_to_update(schedule_OT_to_update, session)
-        #         for t in schedule_OT_to_update:
-        #             t.update_after_upload(success=True)
-        #             update_task_update_fields(session, t, self.log_file, table_name="SheetsInfo")
-        #         session.commit()
-        #     except Exception as e:
-        #         session.rollback()
-        #         log_error(self.log_file, "update_phase", None, "schedule_OT_to_update_fail", f"❌ Ошибка при обновлении schedule OT: {e}")
-        #     time.sleep(3)
+            log_info(self.log_file, "update_phase", None, group_name, f"🔼 Обновление {group_name}: {len(group_tasks)}")
+            try:
+                handler(group_tasks, session)
+            except Exception as e:
+                log_error(self.log_file, "update_phase", None, f"{group_name}_fail", f"❌ Ошибка при обновлении группы: {e}")
+            time.sleep(3)
 
-        # # --- QA List ---
-        # if qa_list_update:
-        #     log_info(self.log_file, "update_phase", None, "qa_list_update", f"🔼 Обновление QA List: {len(qa_list_update)}")
-        #     try:
-        #         self.import_qa_list_to_update(qa_list_update, session)
-        #         for t in qa_list_update:
-        #             t.update_after_upload(success=True)
-        #             update_task_update_fields(session, t, self.log_file, table_name="SheetsInfo")
-        #         session.commit()
-        #     except Exception as e:
-        #         session.rollback()
-        #         log_error(self.log_file, "update_phase", None, "qa_list_update_fail", f"❌ Ошибка при обновлении QA List: {e}")
-        #     time.sleep(3)
-
-        # --- Статистика по задачам ---
+        # --- Статистика ---
         log_info(self.log_file, "update_phase", None, "summary", "🔼 Итоговая статистика по задачам:")
         for task in self.tasks:
             log_info(
@@ -402,20 +361,98 @@ class SheetsInfoScanner:
         for update_group, group_tasks in tasks_by_group.items():
             log_info(self.log_file, "import_tasks_to_update", None, "group", f"🔄 Обработка группы: {update_group} ({len(group_tasks)} задач)")
 
-            # Проверка doc_id
             doc_ids = set(t.target_doc_id for t in group_tasks)
             if len(doc_ids) != 1:
                 log_error(self.log_file, "import_tasks_to_update", None, "multi_doc_id", f"❌ В группе {update_group} несколько doc_id: {doc_ids}. Пропуск.")
                 continue
             doc_id = doc_ids.pop()
 
-            batch_data = self._build_batch_data_from_jsonb(group_tasks)
-            if not batch_data:
+            valid_tasks = self._build_batch_data(group_tasks, session)
+            if not valid_tasks:
                 log_warning(self.log_file, "import_tasks_to_update", None, "no_data", f"⚠️ Нет валидных данных для batchUpdate группы {update_group}. Пропуск.")
                 continue
 
+            batch_data = [{
+                "range": f"{task.target_page_name}!{task.target_page_area}",
+                "values": values
+            } for task, values in valid_tasks.items()]
+
             try:
-                success, error = batch_update(
+                success, error = self._try_batch_update(doc_id, batch_data, update_group)
+                if success:
+                    log_success(self.log_file, "import_tasks_to_update", None, "batch_update", f"✅ Пакетное обновление успешно для группы {update_group}")
+                    self._commit_task_updates(valid_tasks.keys(), session, success=True)
+                else:
+                    log_error(self.log_file, "import_tasks_to_update", None, "batch_update_fail", f"❌ Ошибка при пакетной отправке: {error}")
+                    self._fallback_single_upload(valid_tasks, doc_id, update_group, session)
+            except Exception as e:
+                log_error(self.log_file, "import_tasks_to_update", None, "batch_update_exception", f"❌ Исключение при batch_update: {e}")
+                self._fallback_single_upload(valid_tasks, doc_id, update_group, session)
+
+    def _convert_jsonb_to_tabular(self, jsonb_data: list) -> list:
+        """
+        Преобразует список словарей (JSONB) в таблицу (список списков),
+        где первая строка — заголовки, а последующие — значения.
+        """
+        if not jsonb_data or not isinstance(jsonb_data, list):
+            return []
+
+        if not isinstance(jsonb_data[0], dict):
+            raise ValueError("Ожидался список словарей")
+
+        headers = list(jsonb_data[0].keys())
+        table = [headers]
+
+        for row in jsonb_data:
+            table.append([row.get(h, "") for h in headers])
+
+        return table
+
+    def _build_batch_data(self, tasks, session):
+        valid_tasks = {}
+        for task in tasks:
+            try:
+                raw = json.loads(task.values_json) if isinstance(task.values_json, str) else task.values_json
+                values = self._convert_jsonb_to_tabular(raw)
+                if not isinstance(values, list):
+                    raise ValueError("JSONB должен быть списком списков")
+                valid_tasks[task] = values
+            except Exception as e:
+                log_error(self.log_file, "import_tasks_to_update", task.name_of_process, "json_decode_error", f"❌ Невалидный JSONB: {e}")
+                try:
+                    task.update_after_upload(success=False)
+                    update_task_update_fields(session=session, task=task, log_file=self.log_file, table_name="SheetsInfo")
+                    session.commit()
+                except Exception as inner:
+                    session.rollback()
+                    log_error(self.log_file, "import_tasks_to_update", task.name_of_process, "db_flag_fail", f"❌ Не удалось пометить задачу как failed: {inner}")
+        return valid_tasks
+
+    def _fallback_single_upload(self, valid_tasks, doc_id, update_group, session):
+        for task, values in valid_tasks.items():
+            try:
+                single_data = [{
+                    "range": f"{task.target_page_name}!{task.target_page_area}",
+                    "values": values
+                }]
+                success, error = self._try_batch_update(doc_id, single_data, update_group)
+                if success:
+                    log_success(self.log_file, "import_tasks_to_update", task.name_of_process, "single_update", f"✅ [Task {task.name_of_process} {task.source_page_name} {task.related_month}] Обновлена поштучно.")
+                else:
+                    log_error(self.log_file, "import_tasks_to_update", task.name_of_process, "single_update_fail", f"❌ [Task {task.name_of_process} {task.source_page_name} {task.related_month}] Ошибка при обновлении: {error}")
+
+                task.update_after_upload(success=success)
+                update_task_update_fields(session=session, task=task, log_file=self.log_file, table_name="SheetsInfo")
+                session.commit()
+            except Exception as e:
+                session.rollback()
+                log_error(self.log_file, "import_tasks_to_update", task.name_of_process, "single_update_exception", f"❌ Исключение при поштучном обновлении: {e}")
+
+    def _try_batch_update(self, doc_id, batch_data, update_group, retries=3):
+        last_error = None
+        for attempt in range(retries):
+            try:
+                return batch_update(
                     service=self.service,
                     spreadsheet_id=doc_id,
                     batch_data=batch_data,
@@ -423,482 +460,125 @@ class SheetsInfoScanner:
                     update_group=update_group,
                     log_file=self.log_file
                 )
-                if success:
-                    log_success(self.log_file, "import_tasks_to_update", None, "batch_update", f"✅ Пакетное обновление успешно для группы {update_group}")
-                    try:
-                        self._mark_tasks_uploaded(group_tasks, session)
-                        session.commit()
-                    except Exception as db_err:
-                        session.rollback()
-                        log_error(self.log_file, "import_tasks_to_update", None, "db_update_fail", f"❌ Ошибка при обновлении статусов задач в БД: {db_err}")
-                else:
-                    log_error(self.log_file, "import_tasks_to_update", None, "batch_update_fail", f"❌ Ошибка при пакетной отправке: {error}")
-                    self._fallback_single_upload(group_tasks, doc_id, update_group, session)
             except Exception as e:
-                log_error(self.log_file, "import_tasks_to_update", None, "batch_update_exception", f"❌ Исключение при batch_update: {e}")
-                self._fallback_single_upload(group_tasks, doc_id, update_group, session)
+                last_error = e
+                time.sleep(2 ** attempt)
+        return False, last_error
 
-    def _build_batch_data_from_jsonb(self, tasks):
-        batch_data = []
+    def _commit_task_updates(self, tasks, session, success):
+        try:
+            for task in tasks:
+                # Проверка на корректность task перед обновлением
+                if not hasattr(task, "update_after_upload") or not hasattr(task, "name_of_process"):
+                    log_error(self.log_file, "import_tasks_to_update", None, "invalid_task", f"❌ Некорректный объект задачи: {repr(task)}")
+                    continue
+                task.update_after_upload(success=success)
+                update_task_update_fields(session=session, task=task, log_file=self.log_file, table_name="SheetsInfo")
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            log_error(self.log_file, "import_tasks_to_update", None, "db_update_fail", f"❌ Ошибка при обновлении статуса задач: {e}")
+
+##############################################################################################
+# Импорт Граффиков
+##############################################################################################
+
+    def import_schedule_OT_to_update(self, tasks, session):
+        """
+        Импорт данных Schedule OT в БД с проверкой и обновлением существующих записей.
+        Откат только для одной задачи при ошибке.
+        """
+        total_new = 0
+        total_updated = 0
+
         for task in tasks:
-            if not task.values_json:
-                continue
-
+            new_entries = 0
+            updated_entries = 0
             try:
-                values = json.loads(task.values_json)
-                if not isinstance(values, list):
-                    log_warning(self.log_file, "import_tasks_to_update", task.name_of_process, "invalid_jsonb", "⚠️ Неверный формат JSONB, ожидается список.")
+                if not task.values_json:
+                    log_error(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "empty_values", f"❌ values_json пуст или некорректен в задаче {task.name_of_process}")
                     continue
 
-                batch_data.append({
-                    "range": f"{task.target_page_name}!{task.target_page_area}",
-                    "values": values
-                })
-            except json.JSONDecodeError as e:
-                log_error(self.log_file, "import_tasks_to_update", task.name_of_process, "json_decode_error", f"❌ Ошибка декодирования JSONB: {e}")
-
-        return batch_data
-
-    def _mark_tasks_uploaded(self, tasks, session):
-        for task in tasks:
-            try:
-                task.update_after_upload(success=True)
-                update_task_update_fields(
-                    session=session,
-                    task=task,
-                    log_file=self.log_file,
-                    table_name="SheetsInfo"
-                )
-            except Exception as e:
-                log_error(self.log_file, "import_tasks_to_update", task.name_of_process, "db_update_fail", f"❌ Ошибка при обновлении статуса задачи {task.name_of_process}: {e}")
-
-    def _fallback_single_upload(self, tasks, doc_id, update_group, session):
-        for task in tasks:
-            if not task.values_json:
-                continue
-
-            try:
-                values = json.loads(task.values_json)
-                if not isinstance(values, list):
-                    log_warning(self.log_file, "import_tasks_to_update", task.name_of_process, "invalid_jsonb", "⚠️ Неверный формат JSONB, ожидается список.")
-                    continue
-
-                single_data = [{
-                    "range": f"{task.target_page_name}!{task.target_page_area}",
-                    "values": values
-                }]
-
-                success, error = batch_update(
-                    service=self.service,
-                    spreadsheet_id=doc_id,
-                    batch_data=single_data,
-                    token_name=self.token_name,
-                    update_group=update_group,
-                    log_file=self.log_file
-                )
-                if success:
-                    log_success(self.log_file, "import_tasks_to_update", task.name_of_process, "single_update", f"✅ [Task {task.name_of_process} {task.source_page_name} {task.related_month}] Обновлена поштучно.")
-                else:
-                    log_error(self.log_file, "import_tasks_to_update", task.name_of_process, "single_update_fail", f"❌ [Task {task.name_of_process} {task.source_page_name} {task.related_month}] Ошибка при обновлении: {error}")
                 try:
-                    task.update_after_upload(success=success)
-                    update_task_update_fields(
-                        session=session,
-                        task=task,
-                        log_file=self.log_file,
-                        table_name="SheetsInfo"
-                    )
-                    session.commit()
-                except Exception as db_err:
-                    session.rollback()
-                    log_error(self.log_file, "import_tasks_to_update", task.name_of_process, "db_update_fail", f"❌ Ошибка при обновлении статуса задачи {task.name_of_process} в БД: {db_err}")
-            except json.JSONDecodeError as e:
-                log_error(self.log_file, "import_tasks_to_update", task.name_of_process, "json_decode_error", f"❌ Ошибка декодирования JSONB: {e}")
+                    values = json.loads(task.values_json)
+                except json.JSONDecodeError as e:
+                    log_error(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "json_decode_error", f"❌ Ошибка декодирования JSONB: {e}")
+                    continue
+
+                if not isinstance(values, list):
+                    log_error(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "invalid_format", f"❌ Неверный формат values_json в задаче {task.name_of_process}")
+                    continue
+
+                related_month = task.related_month.replace(day=1)
+                existing_records = session.query(ScheduleOT).filter_by(related_month=related_month).all()
+                existing_lookup = {
+                    (rec.dealer_name.strip(), rec.related_date): rec
+                    for rec in existing_records if rec.dealer_name
+                }
+
+                for row in values:
+                    if not row or not isinstance(row, list) or len(row) < 2:
+                        continue
+
+                    dealer_name = row[0]
+                    if not dealer_name or not isinstance(dealer_name, str):
+                        continue
+
+                    dealer_name = dealer_name.strip()
+
+                    for col_idx, shift in enumerate(row[1:], start=1):
+                        shift = (shift or "").strip()
+                        if shift in {"", "-", "/"}:
+                            continue
+
+                        try:
+                            shift_date = related_month.replace(day=col_idx)
+                        except ValueError:
+                            continue
+
+                        key = (dealer_name, shift_date)
+
+                        try:
+                            if key in existing_lookup:
+                                record = existing_lookup[key]
+                                if record.shift_type != shift:
+                                    record.shift_type = shift
+                                    session.commit()
+                                    updated_entries += 1
+                            else:
+                                exists = session.query(ScheduleOT).filter_by(
+                                    dealer_name=dealer_name,
+                                    related_date=shift_date,
+                                    related_month=related_month
+                                ).first()
+                                if exists:
+                                    continue
+                                session.add(ScheduleOT(
+                                    related_date=shift_date,
+                                    dealer_name=dealer_name,
+                                    shift_type=shift,
+                                    related_month=related_month
+                                ))
+                                session.commit()
+                                new_entries += 1
+                        except Exception as e:
+                            session.rollback()
+                            log_error(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "row_fail", f"❌ Ошибка при обработке записи: {e}")
+
+                log_success(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "imported", f"📅 [{task.name_of_process}] ScheduleOT — новых: {new_entries}, обновлено: {updated_entries}")
+                total_new += new_entries
+                total_updated += updated_entries
+
             except Exception as e:
-                log_error(self.log_file, "import_tasks_to_update", task.name_of_process, "single_update_exception", f"❌ Исключение при поштучном обновлении задачи {task.name_of_process}: {e}")
+                session.rollback()
+                log_error(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "task_fail", f"❌ Ошибка при обработке задачи {task.name_of_process}: {e}")
 
-# ###############################################################################################
-# # Импорт Ошибок в БД
-# ###############################################################################################
+        log_success(self.log_file, "import_schedule_OT_to_update", None, "imported_total", f"✅ ScheduleOT итого — новых: {total_new}, обновлено: {total_updated}")
+                total_new += new_entries
+                total_updated += updated_entries
 
-#     def import_mistakes_to_update(self, mistakes_to_update, session):
-#         """
-#         Импорт ошибок в БД с проверкой дубликатов и валидацией данных.
-#         """
-#         total_success = 0
-#         total_error = 0
+            except Exception as e:
+                session.rollback()
+                log_error(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "task_fail", f"❌ Ошибка при обработке задачи {task.name_of_process}: {e}")
 
-#         for task in mistakes_to_update:
-#             success_count = 0
-#             error_count = 0
-#             try:
-#                 if not task.raw_values_json:
-#                     log_warning(self.log_file, "import_mistakes_to_update", task.name_of_process, "empty_sheet", f"⚠️ Пустой или некорректный sheet в задаче: {task.name_of_process}")
-#                     continue
-
-#                 try:
-#                     sheet = json.loads(task.raw_values_json)
-#                 except json.JSONDecodeError as e:
-#                     log_error(self.log_file, "import_mistakes_to_update", task.name_of_process, "json_decode_error", f"❌ Ошибка декодирования JSONB: {e}")
-#                     continue
-
-#                 if not self._validate_sheet(sheet):
-#                     log_warning(self.log_file, "import_mistakes_to_update", task.name_of_process, "invalid_format", f"⚠️ Неверный формат JSONB в задаче: {task.name_of_process}")
-#                     continue
-
-#                 page_name = task.source_page_name
-#                 floor = get_floor_by_table_name(page_name, FLOORS)
-#                 max_row_in_db = get_max_last_row(session, page_name)
-
-#                 for row_index, row in enumerate(sheet[1:], start=2):
-#                     if row_index <= max_row_in_db or not row or len(row) < 8:
-#                         continue
-
-#                     exists = session.query(MistakeStorage).filter_by(
-#                         related_month=task.related_month,
-#                         table_name=page_name,
-#                         last_row=row_index
-#                     ).first()
-#                     if exists:
-#                         continue
-
-#                     try:
-#                         mistake = self._parse_mistake_row(task, row, row_index, floor, page_name)
-#                         if mistake:
-#                             session.add(mistake)
-#                             success_count += 1
-#                     except Exception as row_err:
-#                         log_error(self.log_file, "import_mistakes_to_update", task.name_of_process, "row_fail", f"❌ Ошибка при добавлении строки {row_index} из {page_name}: {row_err}. Строка: {row}")
-#                         error_count += 1
-
-#                 self._commit_or_rollback(session, log_msg=f"Ошибка при коммите ошибок для {task.name_of_process}")
-#                 log_success(self.log_file, "import_mistakes_to_update", task.name_of_process, "imported", f"✅ [{task.name_of_process}] Импортировано ошибок: {success_count}, ошибок: {error_count}")
-#                 total_success += success_count
-#                 total_error += error_count
-
-#             except Exception as task_err:
-#                 session.rollback()
-#                 log_error(self.log_file, "import_mistakes_to_update", task.name_of_process, "task_fail", f"❌ Ошибка при обработке задачи {task.name_of_process}: {task_err}")
-
-#         log_success(self.log_file, "import_mistakes_to_update", None, "imported_total", f"✅ Импортировано ошибок всего: {total_success}, ошибок: {total_error}")
-
-#     def _parse_mistake_row(self, task, row, row_index, floor, page_name):
-#         try:
-#             date = self.parse_date(row[0])
-#             time_ = self.parse_time(row[1])
-#             shift = self.determine_shift(time_.hour) if time_ else None
-
-#             return MistakeStorage(
-#                 related_month=task.related_month,
-#                 related_date=date,
-#                 related_shift=shift,
-#                 floor=floor,
-#                 table_name=page_name,
-#                 event_time=time_,
-#                 game_id=row[2],
-#                 mistake=row[3],
-#                 mistake_type=row[4],
-#                 is_cancel=self.parse_cancel(row[5]),
-#                 dealer_name=row[6],
-#                 sm_name=row[7],
-#                 last_row=row_index
-#             )
-#         except IndexError as e:
-#             log_error(self.log_file, "_parse_mistake_row", task.name_of_process, "index_error", f"❌ Ошибка доступа к индексу: {e}. Строка: {row}")
-#             return None
-#         except Exception as e:
-#             log_error(self.log_file, "_parse_mistake_row", task.name_of_process, "unknown_error", f"❌ Неизвестная ошибка при разборе строки: {e}. Строка: {row}")
-#             return None
-
-#     def _validate_sheet(self, sheet):
-#         """
-#         Проверяет, что sheet валиден для обработки.
-#         """
-#         return isinstance(sheet, list) and len(sheet) > 1 and all(isinstance(row, list) for row in sheet)
-
-# ################################################################################################
-# # Импорт статуса фидбеков
-# ################################################################################################
-
-#     @staticmethod
-#     def safe_int(value):
-#         try:
-#             if value == '' or value is None:
-#                 return None
-#             return int(value)
-#         except (ValueError, TypeError):
-#             return None
-
-#     @staticmethod
-#     def parse_cancel(value):
-#         if value == '':
-#             return 0
-#         elif value.lower() == 'cancel':
-#             return 1
-#         return None
-
-#     @staticmethod
-#     def parse_date(value):
-#         try:
-#             return datetime.strptime(value.strip(), "%d.%m.%Y").date()
-#         except Exception:
-#             return None
-
-#     @staticmethod
-#     def parse_time(value):
-#         try:
-#             return datetime.strptime(value.strip(), "%H.%M").time()
-#         except Exception:
-#             return None
-
-#     def _parse_feedback_row(self, row, task):
-#         """
-#         Преобразует строку feedback в dict для FeedbackStorage.
-#         Ожидается порядок: [related_date, related_shift, floor, game, dealer_name, sm_name, reason, total, proof, explanation_of_the_reason, action_taken, forwarded_feedback, comment_after_forwarding]
-#         """
-#         def safe(idx):
-#             return row[idx] if len(row) > idx and row[idx] != "" else None
-
-#         return {
-#             "related_date": self.parse_date(safe(0)),
-#             "related_shift": safe(1),
-#             "floor": safe(2),
-#             "game": safe(3),
-#             "dealer_name": safe(4),
-#             "sm_name": safe(5),
-#             "reason": safe(6),
-#             "total": self.safe_int(safe(7)),
-#             "proof": safe(8),
-#             "explanation_of_the_reason": safe(9),
-#             "action_taken": safe(10),
-#             "forwarded_feedback": safe(11),
-#             "comment_after_forwarding": safe(12),
-#         }
-
-#     def import_feedbacks_to_update(self, feedback_to_update, sheets_service, session):
-#         total_success = 0
-#         total_error = 0
-
-#         for task in feedback_to_update:
-#             success_count = 0
-#             error_count = 0
-#             try:
-#                 sheet = task.raw_values_json
-#                 if not sheet or not isinstance(sheet, list):
-#                     log_warning(self.log_file, "import_feedbacks_to_update", task.name_of_process, "empty_sheet", f"⚠️ Пустой или некорректный sheet в задаче: {task.name_of_process}")
-#                     continue
-
-#                 page_name = task.target_page_name
-#                 empty_row_streak = 0
-
-#                 for row_index, row in enumerate(sheet[1:], start=2):
-#                     if not row or not str(row[0]).isdigit():
-#                         continue
-
-#                     feedback_id = int(row[0])
-#                     try:
-#                         parsed = self._parse_feedback_row(row[1:], task)
-#                         if not parsed["related_date"] and not parsed["related_shift"]:
-#                             continue
-#                         if parsed is None:
-#                             empty_row_streak += 1
-#                             if empty_row_streak >= 15:
-#                                 break
-#                             continue
-#                         else:
-#                             empty_row_streak = 0
-
-#                         existing = session.query(FeedbackStorage).filter_by(id=feedback_id).first()
-#                         if existing:
-#                             for attr, val in parsed.items():
-#                                 setattr(existing, attr, val)
-#                             existing.related_month = task.related_month
-#                         else:
-#                             session.add(FeedbackStorage(id=feedback_id, related_month=task.related_month, **parsed))
-
-#                         success_count += 1
-
-#                     except Exception as row_err:
-#                         error_count += 1
-#                         log_error(self.log_file, "import_feedbacks_to_update", task.name_of_process, "row_fail", f"❌ Ошибка при обработке строки {row_index} из {page_name}: {row_err}. Строка: {row}")
-
-#                 session.commit()
-#                 log_success(self.log_file, "import_feedbacks_to_update", task.name_of_process, "imported", f"✅ [{task.name_of_process}] Импортировано фидбеков: {success_count}, ошибок: {error_count}")
-#                 total_success += success_count
-#                 total_error += error_count
-
-#                 try:
-#                     batch_data = [{
-#                         "range": f"{task.target_page_name}!{task.target_page_area}",
-#                         "values": output_data
-#                     }]
-#                     success, error = batch_update(
-#                         service=self.service,
-#                         spreadsheet_id=task.target_doc_id,
-#                         batch_data=batch_data,
-#                         token_name=self.token_name,
-#                         update_group="feedback_status_update",
-#                         log_file=self.log_file
-#                     )
-#                     if success:
-#                         log_success(self.log_file, "import_feedbacks_to_update", task.name_of_process, "sheet_upload", f"📤 Выгрузка статусов в Google Sheet завершена: {task.target_page_name} ({task.target_page_area})")
-#                     else:
-#                         log_error(self.log_file, "import_feedbacks_to_update", task.name_of_process, "sheet_upload_fail", f"❌ Ошибка при выгрузке в Google Sheet: {error}")
-#                 except Exception as gs_err:
-#                     log_error(self.log_file, "import_feedbacks_to_update", task.name_of_process, "sheet_upload_exception", f"❌ Исключение при выгрузке в Google Sheet: {gs_err}")
-
-#             except Exception as e:
-#                 session.rollback()
-#                 log_error(self.log_file, "import_feedbacks_to_update", task.name_of_process, "task_fail", f"❌ Ошибка при обработке задачи {task.name_of_process}: {e}")
-
-#         log_success(self.log_file, "import_feedbacks_to_update", None, "imported_total", f"✅ Импортировано фидбеков всего: {total_success}, ошибок: {total_error}")
-#         log_info(self.log_file, "import_feedbacks_to_update", None, "finish", "🔄 Завершение фазы feedback_status_update.")
-
-#     def import_schedule_OT_to_update(self, tasks, session):
-#         """
-#         Импорт данных Schedule OT в БД с проверкой и обновлением существующих записей.
-#         """
-#         total_new = 0
-#         total_updated = 0
-
-#         for task in tasks:
-#             new_entries = 0
-#             updated_entries = 0
-#             try:
-#                 if not task.values_json:
-#                     log_error(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "empty_values", f"❌ values_json пуст или некорректен в задаче {task.name_of_process}")
-#                     continue
-
-#                 try:
-#                     values = json.loads(task.values_json)
-#                 except json.JSONDecodeError as e:
-#                     log_error(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "json_decode_error", f"❌ Ошибка декодирования JSONB: {e}")
-#                     continue
-
-#                 if not isinstance(values, list):
-#                     log_error(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "invalid_format", f"❌ Неверный формат values_json в задаче {task.name_of_process}")
-#                     continue
-
-#                 related_month = task.related_month.replace(day=1)
-#                 existing_records = session.query(ScheduleOT).filter_by(related_month=related_month).all()
-#                 existing_lookup = {
-#                     (rec.dealer_name.strip(), rec.related_date): rec
-#                     for rec in existing_records if rec.dealer_name
-#                 }
-
-#                 for row in values:
-#                     if not row or not isinstance(row, list) or len(row) < 2:
-#                         continue
-
-#                     dealer_name = row[0]
-#                     if not dealer_name or not isinstance(dealer_name, str):
-#                         continue
-
-#                     dealer_name = dealer_name.strip()
-
-#                     for col_idx, shift in enumerate(row[1:], start=1):
-#                         shift = (shift or "").strip()
-#                         if shift in {"", "-", "/"}:
-#                             continue
-
-#                         try:
-#                             shift_date = related_month.replace(day=col_idx)
-#                         except ValueError:
-#                             continue
-
-#                         key = (dealer_name, shift_date)
-
-#                         if key in existing_lookup:
-#                             record = existing_lookup[key]
-#                             if record.shift_type != shift:
-#                                 record.shift_type = shift
-#                                 updated_entries += 1
-#                         else:
-#                             exists = session.query(ScheduleOT).filter_by(
-#                                 dealer_name=dealer_name,
-#                                 related_date=shift_date,
-#                                 related_month=related_month
-#                             ).first()
-#                             if exists:
-#                                 continue
-#                             session.add(ScheduleOT(
-#                                 related_date=shift_date,
-#                                 dealer_name=dealer_name,
-#                                 shift_type=shift,
-#                                 related_month=related_month
-#                             ))
-#                             new_entries += 1
-
-#                 session.commit()
-#                 log_success(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "imported", f"📅 [{task.name_of_process}] ScheduleOT — новых: {new_entries}, обновлено: {updated_entries}")
-#                 total_new += new_entries
-#                 total_updated += updated_entries
-
-#             except Exception as e:
-#                 session.rollback()
-#                 log_error(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "task_fail", f"❌ Ошибка при обработке задачи {task.name_of_process}: {e}")
-
-#         log_success(self.log_file, "import_schedule_OT_to_update", None, "imported_total", f"✅ ScheduleOT итого — новых: {total_new}, обновлено: {total_updated}")
-
-#     def import_qa_list_to_update(self, qa_list_update, session):
-#         phase = "import_qa_list_to_update"
-
-#         for task in qa_list_update:
-#             task_name = task.name_of_process
-#             try:
-#                 sheet = task.raw_values_json
-#                 if not isinstance(sheet, list) or len(sheet) == 0:
-#                     log_warning(self.log_file, phase, task=task_name, status="invalid_format", message="⚠️ Пустой или неверный формат raw_values_json")
-#                     continue
-
-#                 inserted, updated, skipped = 0, 0, 0
-
-#                 for idx, row_dict in enumerate(sheet, start=1):
-#                     name = row_dict.get("name", "").strip()
-
-#                     if not name:
-#                         log_warning(self.log_file, phase, task=task_name, status="invalid_row", message=f"⚠️ Строка {idx} не содержит допустимого dealer_name — пропущена")
-#                         skipped += 1
-#                         continue
-
-#                     person = session.query(Person).filter_by(full_name=name).first()
-#                     qa_record = session.query(QaList).filter_by(dealer_name=name).first()
-
-#                     is_new = False
-#                     if not qa_record:
-#                         qa_record = QaList(dealer_name=name)
-#                         is_new = True
-
-#                     qa_record.person = person
-#                     for key in [
-#                         "VIP", "GENERIC", "LegendZ", "GSBJ", "TURKISH", "TRISTAR", "TritonRL",
-#                         "Male", "BJ", "BC", "RL", "DT", "HSB", "swBJ", "swBC", "swRL", "SH", "gsDT"
-#                     ]:
-#                         mapped_key = "LEGENDZ" if key == "LegendZ" else key
-#                         setattr(qa_record, mapped_key, row_dict.get(key, "FALSE"))
-
-#                     qa_record.QA_comment = row_dict.get("Quality Control Manager's Note", "")
-
-#                     session.merge(qa_record)
-#                     inserted += 1 if is_new else 0
-#                     updated += 0 if is_new else 1
-
-#                 session.commit()
-#                 log_success(
-#                     self.log_file,
-#                     phase,
-#                     task=task_name,
-#                     status="completed",
-#                     message=f"✅ QA List импорт завершён: добавлено {inserted}, обновлено {updated}, пропущено {skipped}"
-#                 )
-
-#             except Exception as e:
-#                 session.rollback()
-#                 log_error(
-#                     self.log_file,
-#                     phase,
-#                     task=task_name,
-#                     status="error",
-#                     message=f"❌ Ошибка при обработке QA List задачи: {str(e)}",
-#                     exc=traceback.format_exc()
-#                 )
+        log_success(self.log_file, "import_schedule_OT_to_update", None, "imported_total", f"✅ ScheduleOT итого — новых: {total_new}, обновлено: {total_updated}")

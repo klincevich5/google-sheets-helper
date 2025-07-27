@@ -188,7 +188,6 @@ class MistakeStorage(Base):
     floor = Column(Text)
     table_name = Column(Text)
     related_date = Column(Date)
-    related_shift = Column(Text)
     event_time = Column(Time(timezone=True))
     game_id = Column(Text)
     mistake = Column(Text)
@@ -196,7 +195,6 @@ class MistakeStorage(Base):
     is_cancel = Column(Integer)
     dealer_name = Column(String)
     sm_name = Column(Text)
-    last_row = Column(Integer)
 
     __table_args__ = (
         Index("ix_mistake_person_id", "person_id"),
@@ -211,27 +209,29 @@ class QaList(Base):
     person = relationship("Person", back_populates="qa_list_records")
     dealer_name = Column(String, nullable=False)
 
-    vip = Column(String, nullable=False)
-    generic = Column(String, nullable=False)
-    legendz = Column(String, nullable=False)
-    gsbj = Column(String, nullable=False)
-    turkish = Column(String, nullable=False)
-    tristar = Column(String, nullable=False)
-    tritonrl = Column(String, nullable=False)
+    vip = Column(String)
+    generic = Column(String)
+    legendz = Column(String)
+    gsbj = Column(String)
+    turkish = Column(String)
+    tristar = Column(String)
+    gameshow = Column(String)
 
     qa_comment = Column(String)
 
-    male = Column(String, nullable=False)
-    bj = Column(String, nullable=False)
-    bc = Column(String, nullable=False)
-    rl = Column(String, nullable=False)
-    dt = Column(String, nullable=False)
-    hsb = Column(String, nullable=False)
-    swbj = Column(String, nullable=False)
-    swbc = Column(String, nullable=False)
-    swrl = Column(String, nullable=False)
-    sh = Column(String, nullable=False)
-    gsdt = Column(String, nullable=False)
+    male = Column(String)
+    bj = Column(String)
+    bc = Column(String)
+    rl = Column(String)
+    dt = Column(String)
+    hsb = Column(String)
+    swbj = Column(String)
+    swbc = Column(String)
+    swrl = Column(String)
+    sh = Column(String)
+    gsdt = Column(String)
+    tritonrl = Column(String)
+    rrr = Column(String)
 
     __table_args__ = (
         UniqueConstraint('dealer_name', name='uq_dealer_name'),

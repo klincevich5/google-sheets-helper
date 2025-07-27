@@ -60,14 +60,14 @@ class Task:
     def _parse_datetime(self, value):
         if not value:
             return None
+        if isinstance(value, datetime):
+            return value.replace(tzinfo=ZoneInfo(TIMEZONE)) if value.tzinfo is None else value
         try:
             dt = datetime.fromisoformat(value)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=ZoneInfo(TIMEZONE))
-            return dt
+            return dt.replace(tzinfo=ZoneInfo(TIMEZONE)) if dt.tzinfo is None else dt
         except Exception:
             return None
-        
+
     def is_ready_to_scan(self):
         if not self.last_scan:
             return True
@@ -78,31 +78,25 @@ class Task:
         from utils.logger import log_warning
         self.source_doc_id = None
         self.target_doc_id = None
+
         if not getattr(self, 'source_table_type', None):
-            log_warning(log_file, "assign_doc_ids", getattr(self, 'name_of_process', None), "no_source_type", "Нет source_table_type у задачи")
+            log_warning(log_file, "assign_doc_ids", self.name_of_process, "no_source_type", "Нет source_table_type у задачи")
             return False
+
         self.source_doc_id = doc_id_map.get(self.source_table_type)
         if self.source_doc_id is None:
-            log_warning(log_file, "assign_doc_ids", getattr(self, 'name_of_process', None), "no_source_doc_id", f"Не найден source_doc_id для {self.source_table_type}")
+            log_warning(log_file, "assign_doc_ids", self.name_of_process, "no_source_doc_id", f"Не найден source_doc_id для {self.source_table_type}")
+
         if getattr(self, 'target_table_type', None) == "nothing":
             self.target_doc_id = "nothing"
         elif getattr(self, 'target_table_type', None):
             self.target_doc_id = doc_id_map.get(self.target_table_type)
             if self.target_doc_id is None:
-                log_warning(log_file, "assign_doc_ids", getattr(self, 'name_of_process', None), "no_target_doc_id", f"Не найден target_doc_id для {self.target_table_type}")
+                log_warning(log_file, "assign_doc_ids", self.name_of_process, "no_target_doc_id", f"Не найден target_doc_id для {self.target_table_type}")
         else:
-            log_warning(log_file, "assign_doc_ids", getattr(self, 'name_of_process', None), "no_target_type", "Нет target_table_type у задачи")
+            log_warning(log_file, "assign_doc_ids", self.name_of_process, "no_target_type", "Нет target_table_type у задачи")
+
         return self.source_doc_id is not None and self.target_doc_id is not None
-        
-    def update_after_scan(self, success: bool):
-        if success:
-            self.last_scan = TimeProvider.now()
-            self.scan_quantity += 1
-            self.scan_failures = 0
-            self.scanned = 1  # флаг, что задачу нужно обрабатывать
-        else:
-            self.scan_failures += 1
-            self.scanned = 0    # флаг, что задачу не нужно обрабатывать
 
     def process_raw_value(self, log_file=None):
         if not self.raw_values_json:
@@ -138,6 +132,16 @@ class Task:
                     exc=traceback.format_exc()
                 )
             raise ValueError(f"❌ Ошибка при вызове {method_name}: {e}\n{traceback.format_exc()}")
+            
+    def update_after_scan(self, success: bool):
+        if success:
+            self.last_scan = TimeProvider.now()
+            self.scan_quantity = (self.scan_quantity or 0) + 1
+            self.scan_failures = 0
+            self.scanned = 1  # флаг, что задачу нужно обрабатывать
+        else:
+            self.scan_failures = (self.scan_failures or 0) + 1
+            self.scanned = 0    # флаг, что задачу не нужно обрабатывать
 
     def check_for_update(self):
         if not self.values_json:
@@ -164,11 +168,10 @@ class Task:
             self.proceed = 1
             self.changed = 0
 
-    def update_after_upload(self, success):
-        if success:
-            self.last_update = TimeProvider.now()
-            self.update_quantity += 1
-            self.uploaded = 1  # флаг, что задача была выгружена
+    def update_after_upload(self, success: bool):
+        self.last_update = datetime.utcnow()
+        self.update_quantity = (self.update_quantity or 0) + 1
+        if not success:
+            self.update_failures = (self.update_failures or 0) + 1
         else:
-            self.update_failures += 1
-            self.uploaded = 0  # флаг, что задача не была выгружена
+            self.update_failures = self.update_failures or 0

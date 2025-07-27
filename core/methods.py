@@ -1,26 +1,26 @@
 # core/methods.py
 
 from typing import List
-
 import re
 
+# QA columns config (floor/game category)
+qa_columns = {
+    "VIP": "floor", "GENERIC": "floor", "LEGENDZ": "floor", "TURKISH": "floor",
+    "GSBJ": "floor", "TRISTAR": "floor", "Game Show": "floor", "Male": "game",
+    "BJ": "game", "BC": "game", "RL": "game", "DT": "game", "HSB": "game",
+    "swBJ": "game", "swBC": "game", "swRL": "game", "SH": "game",
+    "gsDT": "game", "TritonRL": "game", "RRR": "game"
+}
+
 def normalize_cell(cell):
-    """
-    Удаляет невидимые символы (\u200B, \u00A0), заменяет множественные пробелы на один,
-    обрезает по краям и приводит к нижнему регистру.
-    """
     if cell is None:
         return ""
     cleaned = re.sub(r'[\u200B\u00A0]', '', str(cell).strip())
     collapsed = re.sub(r'\s+', ' ', cleaned)
     return collapsed.strip()
 
+
 def process_single_column_list(values: List[List]) -> List[dict]:
-    """
-    Преобразует список списков вида [["Aidana Tokhdaulet"], [], ["Aksinya Laptsenak"]]
-    в jsonb-совместимый список словарей: [{"name": "Aidana Tokhdaulet"}, ...]
-    Пустые строки пропускаются.
-    """
     result = []
     for row in values:
         if row and len(row) > 0:
@@ -29,10 +29,8 @@ def process_single_column_list(values: List[List]) -> List[dict]:
                 result.append({"name": name})
     return result
 
+
 def filter_by_column(values, col_index, key="TRUE", return_col=0):
-    """
-    Фильтрует строки по значению в колонке col_index == key.
-    """
     result = []
     for row in values:
         if len(row) > col_index and normalize_cell(row[col_index]).upper() == key:
@@ -41,59 +39,117 @@ def filter_by_column(values, col_index, key="TRUE", return_col=0):
     return result
 
 
-def process_default(values: List[List], source_page_area = None) -> List[List]:
+def process_default(values: List[List], source_page_area=None) -> List[dict]:
     return process_single_column_list(values)
+
 
 def process_qa_list(values: List[List], source_page_area=None) -> List[dict]:
     filtered = [[row[0]] for row in values[2:] if row and len(row) > 0]
     return process_single_column_list(filtered)
 
-def process_qa_vip_list(values: List[List], source_page_area=None) -> List[dict]:
-    filtered = filter_by_column(values, col_index=1, key="TRUE", return_col=0)
-    return process_single_column_list(filtered)
 
-def process_qa_generic_list(values: List[List], source_page_area=None) -> List[dict]:
-    filtered = filter_by_column(values, col_index=2, key="TRUE", return_col=0)
-    return process_single_column_list(filtered)
+def process_qa_column_filter(values: List[List], category: str, qa_columns: dict, source_page_area=None) -> List[dict]:
+    if len(values) < 3:
+        return []
 
-def process_qa_legendz_list(values: List[List], source_page_area=None) -> List[dict]:
-    filtered = filter_by_column(values, col_index=3, key="TRUE", return_col=0)
-    return process_single_column_list(filtered)
+    header_row = values[0]
+    normalized_headers = [normalize_cell(h) for h in header_row]
+    name_index = next((i for i, h in enumerate(normalized_headers) if h.lower().startswith("dealer name")), None)
+    if name_index is None:
+        return []
 
-def process_qa_turkish_list(values: List[List], source_page_area=None) -> List[dict]:
-    filtered = filter_by_column(values, col_index=4, key="TRUE", return_col=0)
-    return process_single_column_list(filtered)
+    result = []
+    indices = [i for i, h in enumerate(normalized_headers) if qa_columns.get(h) == category]
 
-def process_qa_gsbj_list(values: List[List], source_page_area=None) -> List[dict]:
-    filtered = filter_by_column(values, col_index=5, key="TRUE", return_col=0)
-    return process_single_column_list(filtered)
+    for row in values[2:]:
+        if not row or len(row) <= name_index:
+            continue
+        name = normalize_cell(row[name_index])
+        if not name:
+            continue
+        for i in indices:
+            if i < len(row) and normalize_cell(row[i]).upper() == "TRUE":
+                result.append({"name": name})
+                break
+    return result
+
+
+def process_permits(values: List[List], source_page_area=None) -> List[dict]:
+    if len(values) < 3:
+        return []
+
+    header_row = values[0]
+    normalized_header = [normalize_cell(h) for h in header_row]
+
+    # Категории колонок: только 'game', без 'floor'
+    game_columns = {k for k, v in qa_columns.items() if v == "game"}
+
+    # Найдём индексы нужных колонок: имя + все game-колонки
+    header_pairs = []
+    for i, h in enumerate(normalized_header):
+        if h.lower().startswith("dealer name"):
+            header_pairs.append((i, "name"))
+        elif h in game_columns:
+            header_pairs.append((i, h))
+
+    if not header_pairs:
+        return []
+
+    result = []
+    for row in values[2:]:
+        if not row or all(not normalize_cell(cell) for cell in row):
+            continue
+
+        entry = {}
+        for i, key in header_pairs:
+            value = normalize_cell(row[i]) if i < len(row) else ""
+            entry[key] = value
+        result.append(entry)
+
+    return result
+
+def process_qa_list_in_db(values: List[List], source_page_area=None) -> List[dict]:
+    if len(values) < 3:
+        return []
+
+    raw_header = values[0]
+    data_rows = values[2:]
+    header = ["name" if normalize_cell(h).lower().startswith("dealer name") else normalize_cell(h) for h in raw_header]
+
+    result = []
+    for row in data_rows:
+        if not row or all((not normalize_cell(cell)) for cell in row):
+            continue
+        if not normalize_cell(row[0]):
+            continue
+        entry = {}
+        for i in range(len(header)):
+            key = header[i]
+            value = normalize_cell(row[i]) if i < len(row) else None
+            if key != "name" and not value:
+                value = "FALSE"
+            entry[key] = value
+        result.append(entry)
+    return result
+
 
 def process_feedbacks_status(values: List[List], source_page_area=None) -> List[dict]:
     if not values:
         return []
 
-    default_header = [
-        "Nr", "Date", "Shift", "Floor", "Game", "GP Name Surname", "SM Name Surname",
-        "Reason", "Total", "Proof", "Explanation of the reason", "Action taken", "Forwarded Feedback", "Comment after forwarding",
-    ]
-
+    default_header = ["Nr", "Date", "Shift", "Floor", "Game", "GP Name Surname", "SM Name Surname",
+                      "Reason", "Total", "Proof", "Explanation of the reason", "Action taken",
+                      "Forwarded Feedback", "Comment after forwarding"]
     first_row = values[0]
-    is_data_row = any(
-        isinstance(cell, str) and cell.strip().count('.') == 2 for cell in first_row
-    )
+    is_data_row = any(isinstance(cell, str) and cell.strip().count('.') == 2 for cell in first_row)
 
-    if is_data_row:
-        header = default_header
-        data_rows = values
-    else:
-        header = [normalize_cell(h) for h in values[0]]
-        data_rows = values[1:]
+    header = default_header if is_data_row else [normalize_cell(h) for h in values[0]]
+    data_rows = values if is_data_row else values[1:]
 
     result = []
-    for i, row in enumerate(data_rows, start=2):
+    for row in data_rows:
         if not any(row):
             continue
-
         row_dict = {}
         for col_index, col_value in enumerate(row):
             if col_index >= len(header):
@@ -102,13 +158,11 @@ def process_feedbacks_status(values: List[List], source_page_area=None) -> List[
             value = normalize_cell(col_value)
             if key:
                 row_dict[key] = value
-
         if not row_dict.get("Date") or not row_dict.get("Shift"):
             continue
-
         result.append(row_dict)
-
     return result
+
 
 def process_feedbacks(values: List[List], source_page_area=None) -> List[dict]:
     if len(values) < 2:
@@ -120,157 +174,71 @@ def process_feedbacks(values: List[List], source_page_area=None) -> List[dict]:
     result = []
     for row in data_rows:
         if any(normalize_cell(cell) for cell in row):
-            item = {
-                header[i]: normalize_cell(row[i]) if i < len(row) else ""
-                for i in range(len(header))
-            }
+            item = {header[i]: normalize_cell(row[i]) if i < len(row) else None for i in range(len(header))}
             result.append(item)
-
     return result
+
 
 def process_mistake_in_db(values: List[List], source_page_area=None) -> List[dict]:
     if len(values) < 2:
         return []
 
     header = [normalize_cell(h) for h in values[0]]
-    data_rows = values[1:]
+    if any(h == "" for h in header):
+        raise ValueError("Некорректные заголовки: пустые ячейки")
 
     result = []
-    for row in data_rows:
+    for row in values[1:]:
         if any(normalize_cell(cell) for cell in row):
             entry = {
-                header[i]: normalize_cell(row[i]) if i < len(row) else ""
-                for i in range(len(header))
+                col: normalize_cell(row[i]) if i < len(row) else None
+                for i, col in enumerate(header)
             }
             result.append(entry)
 
     return result
 
-def process_permits(values: List[List], source_page_area=None) -> List[dict]:
-    if len(values) < 3:
-        return []
-
-    raw_header = values[0]
-
-    exclude = {
-        "VIP", "GENERIC", "LegendZ", "TURKISH", "GSBJ", "TRISTAR", "TritonRL",
-        "Quality Control Manager's Note"
-    }
-
-    header_pairs = [
-        (i, "name" if normalize_cell(h).lower().startswith("dealer name") else normalize_cell(h))
-        for i, h in enumerate(raw_header)
-        if normalize_cell(h) not in exclude
-    ]
-
-    result = []
-    for row in values[2:]:
-        if not row or all((not normalize_cell(cell)) for cell in row):
-            continue
-
-        if not normalize_cell(row[0]):
-            continue
-
-        entry = {
-            name: normalize_cell(row[i]) if i < len(row) else ""
-            for i, name in header_pairs
-        }
-        result.append(entry)
-
-    return result
-
-
-
-def process_qa_list_in_db(values: List[List], source_page_area=None) -> List[dict]:
-    if len(values) < 3:
-        return []
-
-    raw_header = values[0]
-    data_rows = values[2:]
-
-    header = [
-        "name" if normalize_cell(h).lower().startswith("dealer name") else normalize_cell(h)
-        for h in raw_header
-    ]
-
-    result = []
-    for row in data_rows:
-        if not row or all((not normalize_cell(cell)) for cell in row):
-            continue
-
-        if not normalize_cell(row[0]):
-            continue
-
-        entry = {
-            header[i]: normalize_cell(row[i]) if i < len(row) else ""
-            for i in range(len(header))
-        }
-        result.append(entry)
-
-    return result
-
 def process_schedule_OT_json(values: List[List], source_page_area=None) -> List[dict]:
+    if not values or len(values) < 2:
+        return []
+    header = values[0]
     result = []
-    for row in values:
+    for row in values[1:]:
         if not row or all((not normalize_cell(cell)) for cell in row):
             continue
-
-        if len(row) < 1 or not normalize_cell(row[0]):
-            continue
-
         dealer_name = normalize_cell(row[0])
+        if not dealer_name:
+            continue
         item = {"dealer_name": dealer_name}
-
         for i in range(1, len(row)):
-            shift = normalize_cell(row[i])
-            item[f"day_{i}"] = shift
-
+            key = normalize_cell(header[i]) if i < len(header) else f"day_{i}"
+            item[f"day_{key}"] = normalize_cell(row[i])
         result.append(item)
-
     return result
+
 
 def process_sm_schedule(values: List[List], source_page_area=None) -> List[dict]:
     if len(values) < 3:
         return []
-
     day_labels = [normalize_cell(d) for d in values[0]]
     data_rows = values[2:]
-
     result = []
     for row in data_rows:
         if not row or all((not normalize_cell(cell)) for cell in row):
             continue
-
         if not normalize_cell(row[0]):
             continue
-
         sm_name = normalize_cell(row[0])
         entry = {"sm_name": sm_name}
-
         for col_idx in range(1, min(len(row), len(day_labels))):
             day_str = normalize_cell(day_labels[col_idx])
             if not day_str.isdigit():
                 continue
-
             day_key = f"day_{int(day_str)}"
             shift = normalize_cell(row[col_idx])
             entry[day_key] = shift
-
         result.append(entry)
-
     return result
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -410,24 +378,22 @@ def process_full_turkish_rotation(values, source_page_area=None):
         return values
 
 PROCESSORS = {
-    "process_schedule_OT_json": process_schedule_OT_json,
-    "process_default": process_default,
-    "process_qa_list": process_qa_list,
-    "process_qa_vip_list": process_qa_vip_list,
-    "process_qa_generic_list": process_qa_generic_list,
-    "process_qa_legendz_list": process_qa_legendz_list,
-    "process_qa_turkish_list": process_qa_turkish_list,
-    "process_qa_gsbj_list": process_qa_gsbj_list,
-    "process_qa_tritonrl_list": process_qa_list,
-    "process_permits": process_permits,
     "process_rotation": process_rotation,
     "process_full_rotation": process_full_rotation,
     "process_shuffle_rotation": process_shuffle_rotation,
     "process_turkish_rotation": process_turkish_rotation,
     "process_full_turkish_rotation": process_full_turkish_rotation,
+
+    "process_default": process_default,
+    "process_qa_list": process_qa_list,
+    "process_qa_floors": lambda values, area: process_qa_column_filter(values, "floor", qa_columns),
+    "process_qa_games": lambda values, area: process_qa_column_filter(values, "game", qa_columns),
+    "process_permits": process_permits,
+    
     "process_mistake_in_db": process_mistake_in_db,
+    "process_schedule_OT_json": process_schedule_OT_json,
     "process_feedbacks_status": process_feedbacks_status,
     "process_feedbacks": process_feedbacks,
     "process_qa_list_in_db": process_qa_list_in_db,
-    "process_sm_schedule": process_sm_schedule
+    "process_sm_schedule": process_sm_schedule,
 }

@@ -3,6 +3,9 @@
 import json
 from sqlalchemy import func
 from database.db_models import SheetsInfo, RotationsInfo
+from utils.logger import (
+    log_info, log_success, log_warning, log_error, log_section, log_separator
+)
 
 MODEL_MAP = {
     "SheetsInfo": SheetsInfo,
@@ -24,7 +27,6 @@ def update_task_scan_fields(session, task, log_file=None, table_name: str = "She
         "scan_quantity": task.scan_quantity,
         "scan_failures": task.scan_failures
     })
-
 
 def update_task_process_fields(session, task, log_file=None, table_name: str = "SheetsInfo"):
     model = get_model_by_table_name(table_name)
@@ -55,8 +57,6 @@ def update_task_update_fields(session, task, log_file=None, table_name: str = "S
         "update_quantity": task.update_quantity,
         "update_failures": task.update_failures
     })
-
-
 
 def get_max_last_row(session, table_name: str) -> int:
     """

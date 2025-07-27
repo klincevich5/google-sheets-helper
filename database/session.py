@@ -69,19 +69,3 @@ def get_session():
         ]
         if not SESSION_STACK[thread_id]:
             del SESSION_STACK[thread_id]
-
-        # print(f"🛑 [SESSION] Закрыта сессия {session_id} в потоке '{thread_name}'")
-
-        # Детализированная проверка: остались ли незакрытые
-        # if SESSION_STACK:
-        #     now = datetime.datetime.now()
-        #     for tid, stack in SESSION_STACK.items():
-        #         for s in stack:
-        #             age = int((now - s['created_at']).total_seconds())
-        #             print(
-        #                 f"⚠️ [SESSION] Сессия {s['id']} всё ещё открыта в потоке {s['thread_name']} (ID: {tid})\n"
-        #                 f"⏱️ Время жизни: {age} сек\n"
-        #                 f"🔍 Stack (top): {s['trace'].splitlines()[-2]}"
-        #             )
-        # else:
-        #     print("♻️♻️♻️ [SESSION] Все сессии закрыты. Стек пуст.")

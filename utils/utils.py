@@ -153,19 +153,6 @@ def check_sheet_exists(service, spreadsheet_id, sheet_name, log_file, token_name
 
 def batch_get(service, spreadsheet_id, ranges, scan_group, log_file, token_name, retries=RETRIES, delay_seconds=DELAY_SECONDS):
     """Получает данные из указанных диапазонов таблицы Google Sheets.
-
-    Args:
-        service: Объект службы для взаимодействия с Google Sheets API.
-        spreadsheet_id (str): ID таблицы.
-        ranges (list): Список диапазонов для получения данных.
-        scan_group: ?
-        log_file (str): Путь к файлу журнала.
-        token_name (str): Имя файла токена.
-        retries (int): Количество попыток в случае ошибки (по умолчанию из конфигурации).
-        delay_seconds (int): Задержка между попытками в секундах (по умолчанию из конфигурации).
-
-    Returns:
-        dict: Словарь с полученными данными, где ключи - это диапазоны, а значения - списки строк данных.
     """
     attempt = 0
     success = False
