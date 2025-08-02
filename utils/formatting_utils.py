@@ -22,6 +22,7 @@ COLOR_MAP = {
     "LEGENDZ": {"fg": "#000000", "bg": "#34a853"},
     "TRISTAR": {"fg": "#b77a30", "bg": "#434343"},
     "TRITONRL": {"fg": "#ffff00", "bg": "#073763"},
+    "Game Shows": {"fg": "#ffff00", "bg": "#073763"},
     "VIP/GEN": {"fg": "#000000", "bg": "#ff9900"},
     "LZ/GS": {"fg": "#000000", "bg": "#1609c7"},
     "GEN": {"fg": "#000000", "bg": "#ff9900"},
@@ -144,7 +145,7 @@ def build_formatting_requests(values, sheet_id, start_row=0, start_col=3, log_fi
         ("GSBJ", "Replacements GSBJ"),
         ("LEGENDZ", "Replacements LEGENDZ"),
         ("Tri-Star", "Replacements Tri-Star"),
-        ("TritonRL", "Replacements TritonRL"),
+        ("Game Shows", "Replacements Game Shows"),
         ("Shuffle", "Replacements Shuffle"),
     ]
     marker_colors = {
@@ -154,7 +155,7 @@ def build_formatting_requests(values, sheet_id, start_row=0, start_col=3, log_fi
         "GSBJ": COLOR_MAP["GSBJ"],
         "LEGENDZ": COLOR_MAP["LEGENDZ"],
         "Tri-Star": COLOR_MAP["TRISTAR"],
-        "TritonRL": COLOR_MAP["TRITONRL"],
+        "Game Shows": COLOR_MAP["Game Shows"],
         "Shuffle": COLOR_MAP["Shuffle"],
     }
     # Поиск всех позиций меток

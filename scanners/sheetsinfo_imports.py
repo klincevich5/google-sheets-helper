@@ -1,6 +1,6 @@
 from sqlalchemy.dialects.postgresql import insert
 from database.session import get_session
-from database.db_models import MistakeStorage, FeedbackStorage, QaList
+# from database.db_models import MistakeStorage, FeedbackStorage, QaList
 from typing import List, Dict
 import json
 from utils.logger import log_info, log_error
@@ -156,16 +156,16 @@ def import_mistakes_to_update(log_file, task, session):
         required = ["dealer_name", "related_date", "mistake"]
         valid_data = filter_valid_rows(raw_data, required)
 
-        upsert_jsonb_records(
-            session=session,
-            data=valid_data,
-            model=MistakeStorage,
-            conflict_keys=required,
-            skip_cols=["id"],
-            log_file=log_file,
-            phase="update_mistakes_in_db",
-            task=task
-        )
+        # upsert_jsonb_records(
+        #     session=session,
+        #     data=valid_data,
+        #     model=MistakeStorage,
+        #     conflict_keys=required,
+        #     skip_cols=["id"],
+        #     log_file=log_file,
+        #     phase="update_mistakes_in_db",
+        #     task=task
+        # )
     except Exception as e:
         log_error(log_file, "update_mistakes_in_db", task.name_of_process, None, f"Ошибка при обработке ошибок task.id={getattr(task, 'id', '?')}", exc=e)
 
@@ -174,20 +174,20 @@ def import_feedbacks_to_update(log_file, task, session):
     log_info(log_file, "feedback_status_update", task.name_of_process, None, f"Обработка task.id={getattr(task, 'id', '?')}")
     try:
         values = safe_get_task_values(task)
-        raw_data = remap_keys(values, FEEDBACK_FIELDS_MAP)
-        required = ["dealer_name", "feedback_nr"]
-        valid_data = filter_valid_rows(raw_data, required)
+    #     raw_data = remap_keys(values, FEEDBACK_FIELDS_MAP)
+    #     required = ["dealer_name", "feedback_nr"]
+    #     valid_data = filter_valid_rows(raw_data, required)
 
-        upsert_jsonb_records(
-            session=session,
-            data=valid_data,
-            model=FeedbackStorage,
-            conflict_keys=required,
-            skip_cols=["id"],
-            log_file=log_file,
-            phase="feedback_status_update",
-            task=task
-        )
+    #     upsert_jsonb_records(
+    #         session=session,
+    #         data=valid_data,
+    #         model=FeedbackStorage,
+    #         conflict_keys=required,
+    #         skip_cols=["id"],
+    #         log_file=log_file,
+    #         phase="feedback_status_update",
+    #         task=task
+    #     )
     except Exception as e:
         log_error(log_file, "feedback_status_update", task.name_of_process, None, f"Ошибка при обработке feedback task.id={getattr(task, 'id', '?')}", exc=e)
 
@@ -196,19 +196,19 @@ def import_qa_list_to_update(log_file, task, session):
     log_info(log_file, "update_qa_list_db", task.name_of_process, None, f"Обработка task.id={getattr(task, 'id', '?')}")
     try:
         values = safe_get_task_values(task)
-        raw_data = remap_keys(values, QA_FIELDS_MAP)
-        required = ["name"]
-        valid_data = filter_valid_rows(raw_data, required)
+        # raw_data = remap_keys(values, QA_FIELDS_MAP)
+        # required = ["name"]
+        # valid_data = filter_valid_rows(raw_data, required)
 
-        upsert_jsonb_records(
-            session=session,
-            data=valid_data,
-            model=QaList,
-            conflict_keys=required,
-            skip_cols=["id"],
-            log_file=log_file,
-            phase="update_qa_list_db",
-            task=task
-        )
+        # upsert_jsonb_records(
+        #     session=session,
+        #     data=valid_data,
+        #     model=QaList,
+        #     conflict_keys=required,
+        #     skip_cols=["id"],
+        #     log_file=log_file,
+        #     phase="update_qa_list_db",
+        #     task=task
+        # )
     except Exception as e:
         log_error(log_file, "update_qa_list_db", task.name_of_process, None, f"Ошибка при обработке QA List task.id={getattr(task, 'id', '?')}", exc=e)

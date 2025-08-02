@@ -4,7 +4,7 @@ import json
 from sqlalchemy import func
 from database.db_models import SheetsInfo, RotationsInfo
 from utils.logger import (
-    log_info, log_success, log_warning, log_error, log_section, log_separator
+    log_info, log_success, log_error, log_section, log_separator
 )
 
 MODEL_MAP = {

@@ -16,8 +16,10 @@ from utils.logger import (
 from utils.db_orm import get_max_last_row
 from utils.floor_resolver import get_floor_by_table_name
 from database.session import get_session
+# Вверху файла:
+from core.data import refresh_materialized_views
 
-from database.db_models import GamingTable, MistakeStorage, FeedbackStorage,  ScheduleOT, DealerMonthlyStatus, QaList
+from database.db_models import GamingTable, ScheduleOT
 
 from core.config import (
     SHEETSINFO_LOG,
@@ -288,51 +290,32 @@ class SheetsInfoScanner:
     def update_phase(self, session):
         log_section(self.log_file, "update_phase", "🔼 Фаза обновления")
 
-        tasks_to_update = []
         grouped_tasks = defaultdict(list)
+        updated_groups = set()
 
+        # Группировка задач по update_group
         for t in self.tasks:
             if not (t.values_json and t.changed):
                 log_warning(self.log_file, "update_phase", t.name_of_process, "skipped", f"Пропуск задачи {t.name_of_process}: нет изменений или пустой values_json")
                 continue
             grouped_tasks[t.update_group].append(t)
 
-        # --- Обычные задачи ---
-        for group, tasks in grouped_tasks.items():
-            if group in {"update_mistakes_in_db", "feedback_status_update", "update_schedule_OT", "update_qa_list_db"}:
-                continue
-            tasks_to_update.extend(tasks)
-
-        if tasks_to_update:
-            log_info(self.log_file, "update_phase", None, "tasks_to_update", f"🔼 Обновление обычных задач: {len(tasks_to_update)}")
+        # Основной импорт — одной функцией
+        for group_name, tasks in grouped_tasks.items():
+            time.sleep(5)  # Задержка для избежания перегрузки API
+            log_info(self.log_file, "update_phase", None, group_name, f"🔼 Обновление {group_name}: {len(tasks)}")
             try:
-                self.import_tasks_to_update(tasks_to_update, session)
+                self.import_tasks_to_update(tasks, session)
+                updated_groups.add(group_name)
             except Exception as e:
                 session.rollback()
-                log_error(self.log_file, "update_phase", None, "tasks_to_update_fail", f"❌ Ошибка при обновлении задач: {e}")
-            time.sleep(3)
-
-        # --- Специальные группы ---
-        special_groups = [
-            ("update_mistakes_in_db", lambda tasks, session: self._safe_import(import_mistakes_to_update, tasks, session)),
-            ("feedback_status_update", lambda tasks, session: self._safe_import(import_feedbacks_to_update, tasks, session)),
-            ("update_schedule_OT", self.import_schedule_OT_to_update),
-            ("update_qa_list_db", lambda tasks, session: self._safe_import(import_qa_list_to_update, tasks, session)),
-        ]
-
-        for group_name, handler in special_groups:
-            group_tasks = grouped_tasks.get(group_name, [])
-            if not group_tasks:
-                continue
-
-            log_info(self.log_file, "update_phase", None, group_name, f"🔼 Обновление {group_name}: {len(group_tasks)}")
-            try:
-                handler(group_tasks, session)
-            except Exception as e:
                 log_error(self.log_file, "update_phase", None, f"{group_name}_fail", f"❌ Ошибка при обновлении группы: {e}")
             time.sleep(3)
 
-        # --- Статистика ---
+        # Обновление материализованных вью
+        refresh_materialized_views(session, updated_groups, self.log_file)
+
+        # Статистика
         log_info(self.log_file, "update_phase", None, "summary", "🔼 Итоговая статистика по задачам:")
         for task in self.tasks:
             log_info(
@@ -478,107 +461,3 @@ class SheetsInfoScanner:
         except Exception as e:
             session.rollback()
             log_error(self.log_file, "import_tasks_to_update", None, "db_update_fail", f"❌ Ошибка при обновлении статуса задач: {e}")
-
-##############################################################################################
-# Импорт Граффиков
-##############################################################################################
-
-    def import_schedule_OT_to_update(self, tasks, session):
-        """
-        Импорт данных Schedule OT в БД с проверкой и обновлением существующих записей.
-        Откат только для одной задачи при ошибке.
-        """
-        total_new = 0
-        total_updated = 0
-
-        for task in tasks:
-            new_entries = 0
-            updated_entries = 0
-            try:
-                if not task.values_json:
-                    log_error(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "empty_values", f"❌ values_json пуст или некорректен в задаче {task.name_of_process}")
-                    continue
-
-                try:
-                    values = json.loads(task.values_json)
-                except json.JSONDecodeError as e:
-                    log_error(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "json_decode_error", f"❌ Ошибка декодирования JSONB: {e}")
-                    continue
-
-                if not isinstance(values, list):
-                    log_error(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "invalid_format", f"❌ Неверный формат values_json в задаче {task.name_of_process}")
-                    continue
-
-                related_month = task.related_month.replace(day=1)
-                existing_records = session.query(ScheduleOT).filter_by(related_month=related_month).all()
-                existing_lookup = {
-                    (rec.dealer_name.strip(), rec.related_date): rec
-                    for rec in existing_records if rec.dealer_name
-                }
-
-                for row in values:
-                    if not row or not isinstance(row, list) or len(row) < 2:
-                        continue
-
-                    dealer_name = row[0]
-                    if not dealer_name or not isinstance(dealer_name, str):
-                        continue
-
-                    dealer_name = dealer_name.strip()
-
-                    for col_idx, shift in enumerate(row[1:], start=1):
-                        shift = (shift or "").strip()
-                        if shift in {"", "-", "/"}:
-                            continue
-
-                        try:
-                            shift_date = related_month.replace(day=col_idx)
-                        except ValueError:
-                            continue
-
-                        key = (dealer_name, shift_date)
-
-                        try:
-                            if key in existing_lookup:
-                                record = existing_lookup[key]
-                                if record.shift_type != shift:
-                                    record.shift_type = shift
-                                    session.commit()
-                                    updated_entries += 1
-                            else:
-                                exists = session.query(ScheduleOT).filter_by(
-                                    dealer_name=dealer_name,
-                                    related_date=shift_date,
-                                    related_month=related_month
-                                ).first()
-                                if exists:
-                                    continue
-                                session.add(ScheduleOT(
-                                    related_date=shift_date,
-                                    dealer_name=dealer_name,
-                                    shift_type=shift,
-                                    related_month=related_month
-                                ))
-                                session.commit()
-                                new_entries += 1
-                        except Exception as e:
-                            session.rollback()
-                            log_error(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "row_fail", f"❌ Ошибка при обработке записи: {e}")
-
-                log_success(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "imported", f"📅 [{task.name_of_process}] ScheduleOT — новых: {new_entries}, обновлено: {updated_entries}")
-                total_new += new_entries
-                total_updated += updated_entries
-
-            except Exception as e:
-                session.rollback()
-                log_error(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "task_fail", f"❌ Ошибка при обработке задачи {task.name_of_process}: {e}")
-
-        log_success(self.log_file, "import_schedule_OT_to_update", None, "imported_total", f"✅ ScheduleOT итого — новых: {total_new}, обновлено: {total_updated}")
-                total_new += new_entries
-                total_updated += updated_entries
-
-            except Exception as e:
-                session.rollback()
-                log_error(self.log_file, "import_schedule_OT_to_update", task.name_of_process, "task_fail", f"❌ Ошибка при обработке задачи {task.name_of_process}: {e}")
-
-        log_success(self.log_file, "import_schedule_OT_to_update", None, "imported_total", f"✅ ScheduleOT итого — новых: {total_new}, обновлено: {total_updated}")

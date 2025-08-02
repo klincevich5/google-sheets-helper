@@ -9,7 +9,7 @@ from core.task_model import Task
 from database.session import get_session
 from core.time_provider import TimeProvider
 from utils.logger import (
-    log_info, log_success, log_warning, log_error, log_section, log_separator
+    log_info, log_success, log_error, log_section, log_separator
 )
 
 def return_tracked_tables(session) -> dict:
@@ -333,3 +333,24 @@ def load_sheetsinfo_tasks(session, log_file):
 
     finally:
         session.close()
+
+
+def refresh_materialized_views(session, updated_groups: set, log_file=None):
+    """Обновляет материализованные представления при наличии изменений."""
+
+    from sqlalchemy import text
+    views = {
+        "update_qa_list_db": "mv_qa_list",
+        "update_mistakes_in_db": "mv_mistakes",
+        "feedback_status_update": "mv_feedbacks",
+        "update_schedule_OT": "mv_schedule_ot",
+    }
+
+    for group_name in updated_groups:
+        view_name = views.get(group_name)
+        if view_name:
+            try:
+                session.execute(text(f"REFRESH MATERIALIZED VIEW CONCURRENTLY {view_name}"))
+                log_info(log_file, "refresh_views", view_name, "success", f"🔄 Обновлён: {view_name}")
+            except Exception as e:
+                log_error(log_file, "refresh_views", view_name, "fail", f"❌ Ошибка при обновлении {view_name}: {e}")

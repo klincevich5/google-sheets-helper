@@ -42,10 +42,10 @@ class Person(Base):
 
     # Отношения
     user_account = relationship("User", back_populates="person", uselist=False)
-    feedbacks = relationship("FeedbackStorage", back_populates="person")
-    mistakes = relationship("MistakeStorage", back_populates="person")
-    qa_list_records = relationship("QaList", back_populates="person")
-    dealer_monthly_statuses = relationship("DealerMonthlyStatus", back_populates="person")
+    # feedbacks = relationship("FeedbackStorage", back_populates="person")
+    # mistakes = relationship("MistakeStorage", back_populates="person")
+    # qa_list_records = relationship("QaList", back_populates="person")
+    # dealer_monthly_statuses = relationship("DealerMonthlyStatus", back_populates="person")
     schedule_records = relationship("ScheduleOT", back_populates="person")
 
     def __repr__(self):
@@ -80,25 +80,25 @@ class ScheduleOT(Base):
 
 
 
-# 📌 Ручной статус на месяц
-class DealerMonthlyStatus(Base):
-    __tablename__ = "DealerMonthlyStatus"
+# # 📌 Ручной статус на месяц
+# class DealerMonthlyStatus(Base):
+#     __tablename__ = "DealerMonthlyStatus"
 
-    id = Column(Integer, primary_key=True)
-    person_id = Column(Integer, ForeignKey("Persons.id"), nullable=False)
-    person = relationship("Person", back_populates="dealer_monthly_statuses")
+#     id = Column(Integer, primary_key=True)
+#     person_id = Column(Integer, ForeignKey("Persons.id"), nullable=False)
+#     person = relationship("Person", back_populates="dealer_monthly_statuses")
 
-    related_month = Column(Date, nullable=False)
+#     related_month = Column(Date, nullable=False)
 
-    schedule = Column(Boolean)
-    bonus = Column(Boolean)
-    qa_list = Column(Boolean)
-    feedback_status = Column(Boolean)
+#     schedule = Column(Boolean)
+#     bonus = Column(Boolean)
+#     qa_list = Column(Boolean)
+#     feedback_status = Column(Boolean)
 
-    __table_args__ = (
-        UniqueConstraint("person_id", "related_month", name="uq_dealer_month"),
-        Index("ix_dealer_month", "related_month"),
-    )
+#     __table_args__ = (
+#         UniqueConstraint("person_id", "related_month", name="uq_dealer_month"),
+#         Index("ix_dealer_month", "related_month"),
+#     )
 
 
 # 📌 Telegram-аккаунты
@@ -148,95 +148,95 @@ class User(Base):
 
 
 
-class FeedbackStorage(Base):
-    __tablename__ = 'FeedbackStorage'
+# class FeedbackStorage(Base):
+#     __tablename__ = 'FeedbackStorage'
 
-    id = Column(Integer, primary_key=True)
-    person_id = Column(Integer, ForeignKey("Persons.id"), nullable=True)
-    person = relationship("Person", back_populates="feedbacks")
-    feedback_nr = Column(Integer, nullable=False)
-    related_month = Column(Date)
-    related_date = Column(Date)
-    related_shift = Column(Text)
-    floor = Column(Text)
-    game = Column(Text)
-    dealer_name = Column(String)
-    sm_name = Column(Text)
-    reason = Column(Text)
-    total = Column(Integer)
-    proof = Column(Text)
-    explanation_of_the_reason = Column(Text)
-    action_taken = Column(Text)
-    forwarded_feedback = Column(Text)
-    comment_after_forwarding = Column(Text)
+#     id = Column(Integer, primary_key=True)
+#     person_id = Column(Integer, ForeignKey("Persons.id"), nullable=True)
+#     person = relationship("Person", back_populates="feedbacks")
+#     feedback_nr = Column(Integer, nullable=False)
+#     related_month = Column(Date)
+#     related_date = Column(Date)
+#     related_shift = Column(Text)
+#     floor = Column(Text)
+#     game = Column(Text)
+#     dealer_name = Column(String)
+#     sm_name = Column(Text)
+#     reason = Column(Text)
+#     total = Column(Integer)
+#     proof = Column(Text)
+#     explanation_of_the_reason = Column(Text)
+#     action_taken = Column(Text)
+#     forwarded_feedback = Column(Text)
+#     comment_after_forwarding = Column(Text)
         
-    __table_args__ = (
-        Index("ix_feedback_person_id", "person_id"),
-        Index("ix_feedback_related_date", "related_date"),
-        UniqueConstraint("dealer_name", "feedback_nr", name="uq_feedback_dealer_nr"),
-    )
+#     __table_args__ = (
+#         Index("ix_feedback_person_id", "person_id"),
+#         Index("ix_feedback_related_date", "related_date"),
+#         UniqueConstraint("dealer_name", "feedback_nr", name="uq_feedback_dealer_nr"),
+#     )
 
 
-class MistakeStorage(Base):
-    __tablename__ = 'MistakeStorage'
+# class MistakeStorage(Base):
+#     __tablename__ = 'MistakeStorage'
 
-    id = Column(Integer, primary_key=True)
-    person_id = Column(Integer, ForeignKey("Persons.id"), nullable=True)
-    person = relationship("Person", back_populates="mistakes")
+#     id = Column(Integer, primary_key=True)
+#     person_id = Column(Integer, ForeignKey("Persons.id"), nullable=True)
+#     person = relationship("Person", back_populates="mistakes")
 
-    related_month = Column(Date)
-    floor = Column(Text)
-    table_name = Column(Text)
-    related_date = Column(Date)
-    event_time = Column(Time(timezone=True))
-    game_id = Column(Text)
-    mistake = Column(Text)
-    mistake_type = Column(Text)
-    is_cancel = Column(Integer)
-    dealer_name = Column(String)
-    sm_name = Column(Text)
+#     related_month = Column(Date)
+#     floor = Column(Text)
+#     table_name = Column(Text)
+#     related_date = Column(Date)
+#     event_time = Column(Time(timezone=True))
+#     game_id = Column(Text)
+#     mistake = Column(Text)
+#     mistake_type = Column(Text)
+#     is_cancel = Column(Integer)
+#     dealer_name = Column(String)
+#     sm_name = Column(Text)
 
-    __table_args__ = (
-        Index("ix_mistake_person_id", "person_id"),
-        Index("ix_mistake_related_date", "related_date"),
-    )
+#     __table_args__ = (
+#         Index("ix_mistake_person_id", "person_id"),
+#         Index("ix_mistake_related_date", "related_date"),
+#     )
 
-class QaList(Base):
-    __tablename__ = "QaList"
+# class QaList(Base):
+#     __tablename__ = "QaList"
 
-    id = Column(Integer, primary_key=True)
-    person_id = Column(Integer, ForeignKey("Persons.id"), nullable=True)
-    person = relationship("Person", back_populates="qa_list_records")
-    dealer_name = Column(String, nullable=False)
+#     id = Column(Integer, primary_key=True)
+#     person_id = Column(Integer, ForeignKey("Persons.id"), nullable=True)
+#     person = relationship("Person", back_populates="qa_list_records")
+#     dealer_name = Column(String, nullable=False)
 
-    vip = Column(String)
-    generic = Column(String)
-    legendz = Column(String)
-    gsbj = Column(String)
-    turkish = Column(String)
-    tristar = Column(String)
-    gameshow = Column(String)
+#     vip = Column(String)
+#     generic = Column(String)
+#     legendz = Column(String)
+#     gsbj = Column(String)
+#     turkish = Column(String)
+#     tristar = Column(String)
+#     gameshow = Column(String)
 
-    qa_comment = Column(String)
+#     qa_comment = Column(String)
 
-    male = Column(String)
-    bj = Column(String)
-    bc = Column(String)
-    rl = Column(String)
-    dt = Column(String)
-    hsb = Column(String)
-    swbj = Column(String)
-    swbc = Column(String)
-    swrl = Column(String)
-    sh = Column(String)
-    gsdt = Column(String)
-    tritonrl = Column(String)
-    rrr = Column(String)
+#     male = Column(String)
+#     bj = Column(String)
+#     bc = Column(String)
+#     rl = Column(String)
+#     dt = Column(String)
+#     hsb = Column(String)
+#     swbj = Column(String)
+#     swbc = Column(String)
+#     swrl = Column(String)
+#     sh = Column(String)
+#     gsdt = Column(String)
+#     tritonrl = Column(String)
+#     rrr = Column(String)
 
-    __table_args__ = (
-        UniqueConstraint('dealer_name', name='uq_dealer_name'),
-        Index("ix_qalist_person_id", "person_id"),
-    )
+#     __table_args__ = (
+#         UniqueConstraint('dealer_name', name='uq_dealer_name'),
+#         Index("ix_qalist_person_id", "person_id"),
+#     )
 
 class GamingTable(Base):
     __tablename__ = "GamingTables"
